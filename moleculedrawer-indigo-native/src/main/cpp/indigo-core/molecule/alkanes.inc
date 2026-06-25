@@ -1,0 +1,17 @@
+static const char* alkanes_table = 
+  "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+  "<tokenTables>\n"
+  "  <tokenTable name=\"alkanes\" type=\"bases\">\n"
+  "    <token value=\"1\">meth</token>\n"
+  "    <token value=\"2\">eth</token>\n"
+  "    <token value=\"3\">prop</token>\n"
+  "    <token value=\"4\">but</token>\n"
+  "  </tokenTable>\n"
+  "\n"
+  "  <tokenTable name=\"alkanes\" type=\"suffixes\">\n"
+  "    <token value=\"1\">ane</token>\n"
+  "    <token value=\"2\">ene</token>\n"
+  "    <token value=\"3\">yne|yn</token>\n"
+  "    <token value=\"\">yl</token>\n"
+  "  </tokenTable>\n"
+  "</tokenTables>\n";

@@ -1,0 +1,62 @@
+*.iml
+.gradle
+.local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+.operit/
+.backup/
+
+# Gradle 缓存
+.gradle/
+.kotlin/
+
+# 所有子模块的 build 目录
+**/build/
+**/buildSrc/build/
+
+# 编译产物
+*.apk
+*.aab
+*.aar
+*.dex
+*.class
+*.zip
+*.tar.gz
+
+# 大前端库
+ketcher_standalone.zip
+app/src/main/assets/ketcher/
+
+# 导出文件
+*.svg
+*.png
+*.jpg
+*.jpeg
+*.pdf
+
+# IDE
+.idea/
+*.swp
+*.swo
+
+# 临时文件
+tmp/ketcher-src/
+
+# 构建设置/缓存
+.gradle/
+.gradle_build/
+build/
+local.properties
+*.properties.bk
+
+# Android
+*.keystore
+*.jks
+signing.properties
+output-metadata.json
+*.apk.idsig

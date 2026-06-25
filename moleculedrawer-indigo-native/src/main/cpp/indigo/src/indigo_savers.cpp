@@ -1,0 +1,1229 @@
+/****************************************************************************
+ * Copyright (C) from 2009 to Present EPAM Systems.
+ *
+ * This file is part of Indigo toolkit.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ***************************************************************************/
+
+#include "indigo_savers.h"
+
+#include <ctime>
+
+#include "base_cpp/output.h"
+#include "base_cpp/scanner.h"
+#include "molecule/canonical_smiles_saver.h"
+#include "molecule/cml_saver.h"
+#include "molecule/ket_document_json_saver.h"
+#include "molecule/ket_obj_with_props.h"
+#include "molecule/meta_commons.h"
+#include "molecule/molecule_cdxml_saver.h"
+#include "molecule/molecule_json_saver.h"
+#include "molecule/molfile_loader.h"
+#include "molecule/molfile_saver.h"
+#include "molecule/sequence_saver.h"
+#include "molecule/smiles_saver.h"
+#include "reaction/canonical_rsmiles_saver.h"
+#include "reaction/pathway_reaction.h"
+#include "reaction/pathway_reaction_json_saver.h"
+#include "reaction/reaction_cdxml_saver.h"
+#include "reaction/reaction_cml_saver.h"
+#include "reaction/reaction_json_saver.h"
+#include "reaction/rsmiles_saver.h"
+#include "reaction/rxnfile_loader.h"
+#include "reaction/rxnfile_saver.h"
+
+#include <memory>
+#include <unordered_map>
+
+#include "indigo_io.h"
+#include "indigo_ket_document.h"
+#include "indigo_molecule.h"
+#include "indigo_monomer_library.h"
+#include "indigo_reaction.h"
+
+//
+// IndigoSaver
+//
+
+IndigoSaver::IndigoSaver(Output& output) : IndigoObject(IndigoObject::SAVER), _output(output)
+{
+    _closed = false;
+    _own_output = 0;
+}
+
+IndigoSaver::~IndigoSaver()
+{
+    close();
+}
+
+void IndigoSaver::acquireOutput(Output* output)
+{
+    if (_own_output)
+        delete _own_output;
+    _own_output = output;
+}
+
+void IndigoSaver::close()
+{
+    if (_closed)
+        return;
+    _appendFooter();
+
+    delete _own_output;
+    _own_output = 0;
+
+    _closed = true;
+}
+
+IndigoSaver* IndigoSaver::create(Output& output, const char* type)
+{
+    std::unique_ptr<IndigoSaver> saver;
+    if (strcasecmp(type, "sdf") == 0)
+        saver = std::make_unique<IndigoSdfSaver>(output);
+    else if (strcasecmp(type, "smiles") == 0 || strcasecmp(type, "smi") == 0)
+        saver = std::make_unique<IndigoSmilesSaver>(output);
+    else if (strcasecmp(type, "cml") == 0)
+        saver = std::make_unique<IndigoCmlSaver>(output);
+    else if (strcasecmp(type, "rdf") == 0)
+        saver = std::make_unique<IndigoRdfSaver>(output);
+    else
+        throw IndigoError("unsupported saver type: '%s'. Supported formats are sdf, smiles, cml, rdf", type);
+
+    saver->_appendHeader();
+    return saver.release();
+}
+
+void IndigoSaver::appendObject(IndigoObject& object)
+{
+    if (_closed)
+        throw IndigoError("save %s has already been closed", debugInfo());
+    _append(object);
+}
+
+//
+// IndigoMonomerTemplateLibrarySaver
+//
+
+void IndigoMonomerLibrarySaver::save(const MonomerTemplateLibrary& monomers_library)
+{
+    Indigo& indigo = indigoGetInstance();
+    if (indigo.monomer_library_saving_mode == ESDF_FORMAT)
+    {
+        IndigoSdfSaver ss(_output);
+        ss.saveMonomerLibrary(monomers_library);
+    }
+    else
+    {
+        KetDocumentJsonSaver js(_output);
+        js.pretty_json = indigo.json_saving_pretty;
+        js.saveMonomerLibrary(monomers_library);
+    }
+    _output.flush();
+}
+
+int IndigoMonomerLibrarySaver::parseFormatMode(const char* mode)
+{
+    return strcasecmp(mode, "sdf") == 0 ? ESDF_FORMAT : EJSON_FORMAT;
+}
+
+void IndigoMonomerLibrarySaver::saveFormatMode(int mode, Array<char>& output)
+{
+    switch (mode)
+    {
+    case ESDF_FORMAT:
+        output.readString("sdf", true);
+        break;
+    default:
+    case EJSON_FORMAT:
+        output.readString("json", true);
+        break;
+    }
+}
+
+//
+// IndigoSDFSaver
+//
+
+void IndigoSdfSaver::appendMolfile(Output& out, IndigoObject& obj)
+{
+    if (IndigoBaseMolecule::is(obj) || IndigoKetDocument::is(obj))
+    {
+        Indigo& indigo = indigoGetInstance();
+        MolfileSaver saver(out);
+        indigo.initMolfileSaver(saver);
+        saver.saveBaseMolecule(obj.getBaseMolecule());
+    }
+    else
+    {
+        throw IndigoError("%s can not be converted to Molfile", obj.debugInfo());
+    }
+}
+
+void IndigoSdfSaver::append(Output& out, IndigoObject& obj)
+{
+    appendMolfile(out, obj);
+
+    auto& props = obj.getProperties();
+
+    for (auto i : props.elements())
+    {
+        out.printf(">  <%s>\n%s\n\n", props.key(i), props.value(i));
+    }
+
+    out.printfCR("$$$$");
+    out.flush();
+}
+
+const char* IndigoSdfSaver::debugInfo() const
+{
+    return "<SDF saver>";
+}
+
+void IndigoSdfSaver::_append(IndigoObject& object)
+{
+    append(_output, object);
+}
+
+void IndigoSdfSaver::saveMonomerLibrary(const MonomerTemplateLibrary& monomers_library)
+{
+    // collect referred templates
+    std::unordered_set<std::string> referred_templates;
+    for (auto& group_kvp : monomers_library.monomerGroupTemplates())
+    {
+        for (auto& template_kvp : group_kvp.second.monomerTemplates())
+        {
+            auto& mt = template_kvp.second.get();
+            referred_templates.insert(mt.id());
+        }
+    }
+
+    auto printIdtAlias = [](const IdtAlias& idt_alias, Output& out) {
+        std::string idt_base = idt_alias.getBase();
+        std::string idt_aliases;
+        if (idt_base.size())
+            idt_aliases = "base=" + idt_base;
+
+        if (idt_alias.hasModifications())
+        {
+            if (idt_alias.hasModification(IdtModification::FIVE_PRIME_END))
+            {
+                if (idt_aliases.size())
+                    idt_aliases += ";";
+                const std::string& alias = idt_alias.getModification(IdtModification::FIVE_PRIME_END);
+                idt_aliases += "ep5=" + alias;
+            }
+
+            if (idt_alias.hasModification(IdtModification::THREE_PRIME_END))
+            {
+                if (idt_aliases.size())
+                    idt_aliases += ";";
+                const std::string& alias = idt_alias.getModification(IdtModification::THREE_PRIME_END);
+                idt_aliases += "ep3=" + alias;
+            }
+
+            if (idt_alias.hasModification(IdtModification::INTERNAL))
+            {
+                if (idt_aliases.size())
+                    idt_aliases += ";";
+                const std::string& alias = idt_alias.getModification(IdtModification::INTERNAL);
+                idt_aliases += "internal=" + alias;
+            }
+        }
+
+        if (idt_aliases.size())
+            out.printf(">  <%s>\n%s\n\n", "idtAliases", idt_aliases.c_str());
+    };
+
+    Indigo& indigo = indigoGetInstance();
+    MolfileSaver saver(_output);
+    indigo.initMolfileSaver(saver);
+    saver.mode = MolfileSaver::MODE_3000;
+
+    for (auto& template_kvp : monomers_library.monomerTemplates())
+    {
+        auto& mt = template_kvp.second;
+        auto tg = mt.getTGroup();
+        Molecule mol;
+        mol.tgroups.addTGroup();
+        mol.tgroups.getTGroup(0).copy(*tg);
+        saver.saveBaseMolecule(mol);
+        _output.printf(">  <%s>\n%s\n\n", "type", "monomerTemplate");
+        if (mt.hasStringProp(toUType(MonomerTemplate::StringProps::aliasHELM)))
+        {
+            std::string alias_helm = mt.getStringProp(toUType(MonomerTemplate::StringProps::aliasHELM));
+            auto first = alias_helm.find_first_not_of(" \t\n\r\f\v");
+            if (first == std::string::npos)
+                alias_helm.clear();
+            else
+                alias_helm = alias_helm.substr(first, alias_helm.find_last_not_of(" \t\n\r\f\v") - first + 1);
+            _output.printf(">  <%s>\n%s\n\n", "aliasHELM", alias_helm.c_str());
+        }
+
+        printIdtAlias(mt.idtAlias(), _output);
+
+        std::string modification_types;
+        for (auto& mod_type : mt.modificationTypes())
+        {
+            modification_types += mod_type;
+            modification_types += ";";
+        }
+
+        if (modification_types.size())
+            _output.printf(">  <%s>\n%s\n\n", "modificationTypes", modification_types.c_str());
+
+        _output.printfCR("$$$$");
+    }
+
+    for (auto& group_kvp : monomers_library.monomerGroupTemplates())
+    {
+        auto& mgt = group_kvp.second;
+        Molecule mol;
+        std::unordered_map<std::string, int> template_atom_idx_by_id;
+        // Preserve the template order from the source library; monomerTemplates() is a map sorted by id.
+        for (const auto& template_id : mgt.templateIds())
+        {
+            const auto& mt = monomers_library.getMonomerTemplateById(template_id);
+            auto tg = mt.getTGroup();
+            mol.tgroups.addTGroup();
+            mol.tgroups.getTGroup(mol.tgroups.getTGroupCount() - 1).copy(*tg);
+            int tidx = mol.addTemplateAtom(tg->tgroup_name.ptr());
+            mol.setTemplateAtomClass(tidx, tg->tgroup_class.ptr());
+            mol.setTemplateAtomTemplateIndex(tidx, mol.tgroups.getTGroupCount() - 1);
+            template_atom_idx_by_id.emplace(mt.id(), tidx);
+        }
+
+        auto get_template_atom_idx = [&mgt, &template_atom_idx_by_id](const KetConnectionEndPoint& endpoint) -> int {
+            if (!hasKetStrProp(endpoint, templateId))
+                throw IndigoError("Monomer group template %s contains connection endpoint without templateId.", mgt.id().c_str());
+            const auto& template_id = getKetStrProp(endpoint, templateId);
+            auto it = template_atom_idx_by_id.find(template_id);
+            if (it == template_atom_idx_by_id.end())
+                throw IndigoError("Monomer group template %s contains connection to unknown template %s.", mgt.id().c_str(), template_id.c_str());
+            return it->second;
+        };
+
+        auto get_bond_order = [&mgt](const KetConnection& connection) -> int {
+            if (connection.connectionType() == KetConnectionSingle)
+                return BOND_SINGLE;
+            if (connection.connectionType() == KetConnectionHydro)
+                return _BOND_HYDROGEN;
+            throw IndigoError("Unsupported connection type '%s' in monomer group template %s.", connection.connectionType().c_str(), mgt.id().c_str());
+        };
+
+        for (const auto& connection : mgt.connections())
+        {
+            int beg_idx = get_template_atom_idx(connection.ep1());
+            int end_idx = get_template_atom_idx(connection.ep2());
+
+            if (hasKetStrProp(connection.ep1(), attachmentPointId))
+            {
+                auto ap_id = convertAPFromHELM(getKetStrProp(connection.ep1(), attachmentPointId));
+                mol.setTemplateAtomAttachmentOrder(beg_idx, end_idx, ap_id.c_str());
+            }
+
+            if (hasKetStrProp(connection.ep2(), attachmentPointId))
+            {
+                auto ap_id = convertAPFromHELM(getKetStrProp(connection.ep2(), attachmentPointId));
+                mol.setTemplateAtomAttachmentOrder(end_idx, beg_idx, ap_id.c_str());
+            }
+
+            int bond_idx = mol.addBond_Silent(beg_idx, end_idx, get_bond_order(connection));
+            if (connection.annotation().has_value())
+                mol.setBondAnnotation(bond_idx, connection.annotation().value());
+        }
+        saver.saveBaseMolecule(mol);
+        _output.printf(">  <%s>\n%s\n\n", "type", "monomerGroupTemplate");
+        _output.printf(">  <%s>\n%s\n\n", "groupClass", mgt.groupClass().c_str());
+        _output.printf(">  <%s>\n%s\n\n", "groupName", mgt.name().c_str());
+        if (mgt.aliasAxoLabs().has_value())
+            _output.printf(">  <%s>\n%s\n\n", "aliasAxoLabs", mgt.aliasAxoLabs().value().c_str());
+        printIdtAlias(mgt.idtAlias(), _output);
+    }
+    _output.flush();
+}
+
+CEXPORT int indigoSdfAppend(int output, int molecule)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(molecule);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoSdfSaver::append(out, obj);
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+//
+// IndigoSmilesSaver
+//
+
+void IndigoSmilesSaver::generateSmiles(IndigoObject& obj, Array<char>& out_buffer, SmilesSaver::SMILES_MODE smiles_format)
+{
+    ArrayOutput output(out_buffer);
+    if (IndigoBaseMolecule::is(obj) || IndigoKetDocument::is(obj))
+    {
+        BaseMolecule& mol = obj.getBaseMolecule();
+        SmilesSaver saver(output);
+        saver.chemaxon = (smiles_format == SmilesSaver::SMILES_MODE::SMILES_CHEMAXON);
+
+        if (mol.isQueryMolecule())
+            saver.saveQueryMolecule(mol.asQueryMolecule());
+        else
+            saver.saveMolecule(mol.asMolecule());
+    }
+    else if (IndigoBaseReaction::is(obj))
+    {
+        BaseReaction& rxn = obj.getBaseReaction();
+        RSmilesSaver saver(output);
+        saver.chemaxon = (smiles_format == SmilesSaver::SMILES_MODE::SMILES_CHEMAXON);
+
+        if (rxn.isQueryReaction())
+            saver.saveQueryReaction(rxn.asQueryReaction());
+        else
+            saver.saveReaction(rxn.asReaction());
+    }
+    else
+        throw IndigoError("%s can not be converted to SMILES", obj.debugInfo());
+    out_buffer.push(0);
+}
+
+void IndigoSmilesSaver::generateSmarts(IndigoObject& obj, Array<char>& out_buffer)
+{
+    ArrayOutput output(out_buffer);
+
+    if (IndigoBaseMolecule::is(obj))
+    {
+        BaseMolecule& mol = obj.getBaseMolecule();
+
+        if (mol.tgroups.getTGroupCount())
+        {
+            mol.transformTemplatesToSuperatoms();
+        }
+
+        SmilesSaver saver(output);
+        saver.smarts_mode = true;
+        if (mol.isQueryMolecule())
+        {
+            saver.saveQueryMolecule(mol.asQueryMolecule());
+        }
+        else
+        {
+            Array<char> mol_out_buffer;
+            ArrayOutput mol_output(mol_out_buffer);
+            MolfileSaver saver_tmp(mol_output);
+            saver_tmp.saveMolecule(mol.asMolecule());
+            mol_out_buffer.push(0);
+            BufferScanner sc(mol_out_buffer);
+            MolfileLoader loader_tmp(sc);
+            QueryMolecule qmol;
+            loader_tmp.loadQueryMolecule(qmol);
+            saver.saveQueryMolecule(qmol);
+        }
+    }
+    else if (IndigoBaseReaction::is(obj))
+    {
+        BaseReaction& rxn = obj.getBaseReaction();
+
+        RSmilesSaver saver(output);
+        saver.smarts_mode = true;
+
+        if (rxn.isQueryReaction())
+            saver.saveQueryReaction(rxn.asQueryReaction());
+        else
+        {
+            Array<char> rxn_out_buffer;
+            ArrayOutput rxn_output(rxn_out_buffer);
+            RxnfileSaver saver_tmp(rxn_output);
+            saver_tmp.saveReaction(rxn.asReaction());
+            rxn_out_buffer.push(0);
+            BufferScanner sc(rxn_out_buffer);
+            RxnfileLoader loader_tmp(sc);
+            QueryReaction qreaction;
+            loader_tmp.loadQueryReaction(qreaction);
+            saver.saveQueryReaction(qreaction);
+        }
+    }
+    else
+        throw IndigoError("%s can not be converted to SMARTS", obj.debugInfo());
+    out_buffer.push(0);
+}
+
+void IndigoSmilesSaver::append(Output& output, IndigoObject& object)
+{
+    QS_DEF(Array<char>, tmp_buffer);
+    IndigoSmilesSaver::generateSmiles(object, tmp_buffer);
+    output.writeString(tmp_buffer.ptr());
+
+    Indigo& indigo = indigoGetInstance();
+    if (indigo.smiles_saving_write_name)
+    {
+        output.writeString(" ");
+        output.writeString(object.getName());
+    }
+    output.writeCR();
+    output.flush();
+}
+
+const char* IndigoSmilesSaver::debugInfo() const
+{
+    return "<smiles saver>";
+}
+
+void IndigoSmilesSaver::_append(IndigoObject& object)
+{
+    append(_output, object);
+}
+
+CEXPORT int indigoSmilesAppend(int output, int item)
+{
+    INDIGO_BEGIN
+    {
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoObject& obj = self.getObject(item);
+        IndigoSmilesSaver::append(out, obj);
+        out.flush();
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+//
+// IndigoCanonicalSmilesSaver
+//
+
+void IndigoCanonicalSmilesSaver::generateSmiles(IndigoObject& obj, Array<char>& out_buffer)
+{
+    ArrayOutput output(out_buffer);
+
+    if (IndigoBaseMolecule::is(obj))
+    {
+        BaseMolecule& mol = obj.getBaseMolecule();
+
+        CanonicalSmilesSaver saver(output);
+
+        if (mol.isQueryMolecule())
+            saver.saveQueryMolecule(mol.asQueryMolecule());
+        else
+            saver.saveMolecule(mol.asMolecule());
+    }
+    else if (IndigoBaseReaction::is(obj))
+    {
+        BaseReaction& rxn = obj.getBaseReaction();
+
+        CanonicalRSmilesSaver saver(output);
+
+        if (rxn.isQueryReaction())
+            saver.saveQueryReaction(rxn.asQueryReaction());
+        else
+            saver.saveReaction(rxn.asReaction());
+    }
+    else
+        throw IndigoError("%s can not be converted to SMILES", obj.debugInfo());
+    out_buffer.push(0);
+}
+
+void IndigoCanonicalSmilesSaver::generateSmarts(IndigoObject& obj, Array<char>& out_buffer)
+{
+    ArrayOutput output(out_buffer);
+
+    if (IndigoBaseMolecule::is(obj))
+    {
+        BaseMolecule& mol = obj.getBaseMolecule();
+
+        CanonicalSmilesSaver saver(output);
+        saver.smarts_mode = true;
+
+        if (mol.isQueryMolecule())
+            saver.saveQueryMolecule(mol.asQueryMolecule());
+        else
+            saver.saveMolecule(mol.asMolecule());
+    }
+    else if (IndigoBaseReaction::is(obj))
+    {
+        BaseReaction& rxn = obj.getBaseReaction();
+
+        CanonicalRSmilesSaver saver(output);
+        saver.smarts_mode = true;
+
+        if (rxn.isQueryReaction())
+            saver.saveQueryReaction(rxn.asQueryReaction());
+        else
+            saver.saveReaction(rxn.asReaction());
+    }
+    else
+        throw IndigoError("%s can not be converted to SMARTS", obj.debugInfo());
+    out_buffer.push(0);
+}
+
+const char* IndigoCanonicalSmilesSaver::debugInfo() const
+{
+    return "<smiles saver>";
+}
+
+//
+// IndigoCMLSaver
+//
+
+void IndigoCmlSaver::append(Output& out, IndigoObject& obj)
+{
+    if (IndigoBaseMolecule::is(obj))
+    {
+        CmlSaver saver(out);
+        saver.skip_cml_tag = true;
+
+        BaseMolecule& mol = obj.getBaseMolecule();
+
+        if (mol.isQueryMolecule())
+            saver.saveQueryMolecule(mol.asQueryMolecule());
+        else
+            saver.saveMolecule(mol.asMolecule());
+    }
+    else if (IndigoBaseReaction::is(obj))
+    {
+        ReactionCmlSaver saver(out);
+        saver.skip_cml_tag = true;
+        saver.saveReaction(obj.getReaction());
+    }
+    else
+        throw IndigoError("%s can not be saved to CML", obj.debugInfo());
+}
+
+void IndigoCmlSaver::appendHeader(Output& out)
+{
+    out.printf("<?xml version=\"1.0\" ?>\n");
+    out.printf("<cml>\n");
+}
+
+void IndigoCmlSaver::appendFooter(Output& out)
+{
+    out.printf("</cml>\n");
+}
+
+const char* IndigoCmlSaver::debugInfo() const
+{
+    return "<CML saver>";
+}
+
+void IndigoCmlSaver::_append(IndigoObject& object)
+{
+    append(_output, object);
+}
+
+void IndigoCmlSaver::_appendHeader()
+{
+    appendHeader(_output);
+}
+
+void IndigoCmlSaver::_appendFooter()
+{
+    appendFooter(_output);
+}
+
+CEXPORT int indigoCmlHeader(int output)
+{
+    INDIGO_BEGIN
+    {
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoCmlSaver::appendHeader(out);
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoCmlFooter(int output)
+{
+    INDIGO_BEGIN
+    {
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoCmlSaver::appendFooter(out);
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoCmlAppend(int output, int item)
+{
+    INDIGO_BEGIN
+    {
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoObject& obj = self.getObject(item);
+        IndigoCmlSaver::append(out, obj);
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+//
+// IndigoRDFSaver
+//
+
+void IndigoRdfSaver::appendRXN(Output& out, IndigoObject& obj)
+{
+    Indigo& indigo = indigoGetInstance();
+
+    RxnfileSaver saver(out);
+    indigo.initRxnfileSaver(saver);
+    saver.saveBaseReaction(obj.getBaseReaction());
+}
+
+void IndigoRdfSaver::append(Output& out, IndigoObject& obj)
+{
+    if (IndigoBaseMolecule::is(obj))
+    {
+        out.writeStringCR("$MFMT");
+        IndigoSdfSaver::appendMolfile(out, obj);
+    }
+    else if (IndigoBaseReaction::is(obj))
+    {
+        out.writeStringCR("$RFMT");
+        IndigoRdfSaver::appendRXN(out, obj);
+    }
+    else
+        throw IndigoError("%s can not be saved to RDF", obj.debugInfo());
+
+    auto& props = obj.getProperties();
+
+    for (auto i : props.elements())
+    {
+        out.printf("$DTYPE %s\n$DATUM %s\n", props.key(i), props.value(i));
+    }
+}
+
+void IndigoRdfSaver::appendHeader(Output& out)
+{
+    Indigo& indigo = indigoGetInstance();
+
+    out.printfCR("$RDFILE 1");
+    struct tm lt;
+    if (indigo.molfile_saving_skip_date)
+        memset(&lt, 0, sizeof(lt));
+    else
+    {
+        time_t tm = time(NULL);
+        lt = *localtime(&tm);
+    }
+    out.printfCR("$DATM    %02d/%02d/%02d %02d:%02d", lt.tm_mon + 1, lt.tm_mday, lt.tm_year % 100, lt.tm_hour, lt.tm_min);
+}
+
+const char* IndigoRdfSaver::debugInfo() const
+{
+    return "<smiles saver>";
+}
+
+void IndigoRdfSaver::_append(IndigoObject& object)
+{
+    append(_output, object);
+}
+
+void IndigoRdfSaver::_appendHeader()
+{
+    appendHeader(_output);
+}
+
+CEXPORT int indigoRdfHeader(int output)
+{
+    INDIGO_BEGIN
+    {
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoRdfSaver::appendHeader(out);
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoRdfAppend(int output, int item)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoRdfSaver::append(out, obj);
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+//
+// Saving functions
+//
+CEXPORT int indigoCreateSaver(int output, const char* format)
+{
+    INDIGO_BEGIN
+    {
+        Output& out = IndigoOutput::get(self.getObject(output));
+        return self.addObject(IndigoSaver::create(out, format));
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoCreateFileSaver(const char* filename, const char* format)
+{
+    INDIGO_BEGIN
+    {
+        std::unique_ptr<FileOutput> output = std::make_unique<FileOutput>(self.filename_encoding, filename);
+        std::unique_ptr<IndigoSaver> saver(IndigoSaver::create(*output, format));
+        saver->acquireOutput(output.release());
+        return self.addObject(saver.release());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveMolfile(int molecule, int output)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(molecule);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoSdfSaver::appendMolfile(out, obj);
+        out.flush();
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveSequence(int item, int output, int library)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoBaseMolecule::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            BaseMolecule& mol = obj.getBaseMolecule();
+            saver.saveMolecule(mol);
+            out.flush();
+            return 1;
+        }
+        else if (IndigoKetDocument::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            saver.saveKetDocument(static_cast<IndigoKetDocument&>(obj).get());
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveSequence(): expected molecule, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveSequence3Letter(int item, int output, int library)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoKetDocument::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            saver.saveKetDocument(static_cast<IndigoKetDocument&>(obj).get(), SequenceSaver::SeqFormat::Sequence3);
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveSequence3Letter(): expected document, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveFasta(int item, int output, int library)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoBaseMolecule::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            BaseMolecule& mol = obj.getBaseMolecule();
+            saver.saveMolecule(mol, SequenceSaver::SeqFormat::FASTA);
+            out.flush();
+            return 1;
+        }
+        else if (IndigoKetDocument::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            saver.saveKetDocument(static_cast<IndigoKetDocument&>(obj).get(), SequenceSaver::SeqFormat::FASTA);
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveFasta(): expected molecule, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveIdt(int item, int output, int library)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoBaseMolecule::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            BaseMolecule& mol = obj.getBaseMolecule();
+            saver.saveMolecule(mol, SequenceSaver::SeqFormat::IDT);
+            out.flush();
+            return 1;
+        }
+        else if (IndigoKetDocument::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            saver.saveKetDocument(static_cast<IndigoKetDocument&>(obj).get(), SequenceSaver::SeqFormat::IDT);
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveIdt(): expected molecule, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveHelm(int item, int output, int library)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoBaseMolecule::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            BaseMolecule& mol = obj.getBaseMolecule();
+            saver.saveMolecule(mol, SequenceSaver::SeqFormat::HELM);
+            out.flush();
+            return 1;
+        }
+        else if (IndigoKetDocument::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            saver.saveKetDocument(static_cast<IndigoKetDocument&>(obj).get(), SequenceSaver::SeqFormat::HELM);
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveHelm(): expected molecule, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveBiln(int item, int output, int library)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoBaseMolecule::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            BaseMolecule& mol = obj.getBaseMolecule();
+            saver.saveMolecule(mol, SequenceSaver::SeqFormat::BILN);
+            out.flush();
+            return 1;
+        }
+        else if (IndigoKetDocument::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            saver.saveKetDocument(static_cast<IndigoKetDocument&>(obj).get(), SequenceSaver::SeqFormat::BILN);
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveBiln(): expected molecule, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveAxoLabs(int item, int output, int library)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoBaseMolecule::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            BaseMolecule& mol = obj.getBaseMolecule();
+            KetDocument doc(mol);
+            saver.saveKetDocument(doc, SequenceSaver::SeqFormat::IDT);
+            out.flush();
+            return 1;
+        }
+        else if (IndigoKetDocument::is(obj))
+        {
+            IndigoObject& lib_obj = self.getObject(library);
+            SequenceSaver saver(out, IndigoMonomerLibrary::get(lib_obj));
+            saver.saveKetDocument(static_cast<IndigoKetDocument&>(obj).get(), SequenceSaver::SeqFormat::AxoLabs);
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveAxoLabs(): expected molecule, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveMonomerLibrary(int output, int library)
+{
+    INDIGO_BEGIN
+    {
+        Output& out = IndigoOutput::get(self.getObject(output));
+        IndigoMonomerLibrarySaver ms(out);
+        IndigoObject& lib_obj = self.getObject(library);
+        ms.save(IndigoMonomerLibrary::get(lib_obj));
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveJson(int item, int output)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoBaseMolecule::is(obj))
+        {
+            MoleculeJsonSaver saver(out);
+            self.initMoleculeJsonSaver(saver);
+            BaseMolecule& mol = obj.getBaseMolecule();
+            saver.saveMolecule(mol);
+            out.flush();
+            return 1;
+        }
+        else if (IndigoBaseReaction::is(obj))
+        {
+            if (obj.type == IndigoObject::PATHWAY_REACTION)
+            {
+                PathwayReactionJsonSaver jn(out);
+                self.initReactionJsonSaver(jn);
+                jn.saveReaction(obj.getPathwayReaction());
+                out.flush();
+                return 1;
+            }
+            else
+            {
+                ReactionJsonSaver saver(out);
+                self.initReactionJsonSaver(saver);
+                BaseReaction& rxn = obj.getBaseReaction();
+                saver.saveReaction(rxn);
+                out.flush();
+                return 1;
+            }
+        }
+        else if (IndigoKetDocument::is(obj))
+        {
+            KetDocumentJsonSaver js(out);
+            js.pretty_json = self.json_saving_pretty;
+            js.saveKetDocument(static_cast<IndigoKetDocument&>(obj).get());
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveJson(): expected molecule or reaction, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveCml(int item, int output)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+        if (IndigoBaseMolecule::is(obj) || IndigoKetDocument::is(obj))
+        {
+            CmlSaver saver(out);
+
+            BaseMolecule& mol = obj.getBaseMolecule();
+
+            if (mol.isQueryMolecule())
+                saver.saveQueryMolecule(mol.asQueryMolecule());
+            else
+                saver.saveMolecule(mol.asMolecule());
+            out.flush();
+            return 1;
+        }
+        if (IndigoBaseReaction::is(obj))
+        {
+            auto& rxn = obj.getBaseReaction();
+            ReactionCmlSaver saver(out);
+            saver.saveReaction(rxn);
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveCml(): expected molecule or reaction, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveMDLCT(int item, int output)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        QS_DEF(Array<char>, buf);
+        ArrayOutput out(buf);
+
+        if (IndigoBaseMolecule::is(obj))
+            IndigoSdfSaver::appendMolfile(out, obj);
+        else if (IndigoBaseReaction::is(obj))
+            IndigoRdfSaver::appendRXN(out, obj);
+        Output& out2 = IndigoOutput::get(self.getObject(output));
+        BufferScanner scanner(buf);
+        QS_DEF(Array<char>, line);
+        while (!scanner.isEOF())
+        {
+            scanner.readLine(line, false);
+            if (line.size() > 255)
+                throw IndigoError("indigoSaveMDLCT: line too big (%d)", line.size());
+            out2.writeChar(line.size());
+            out2.writeArray(line);
+        }
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveRxnfile(int reaction, int output)
+{
+    INDIGO_BEGIN
+    {
+        BaseReaction& rxn = self.getObject(reaction).getBaseReaction();
+        Output& out = IndigoOutput::get(self.getObject(output));
+        RxnfileSaver saver(out);
+        self.initRxnfileSaver(saver);
+        if (rxn.isQueryReaction())
+            saver.saveQueryReaction(rxn.asQueryReaction());
+        else
+            saver.saveReaction(rxn.asReaction());
+        out.flush();
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoAppend(int saver_id, int object)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(object);
+        IndigoObject& saver_obj = self.getObject(saver_id);
+        if (saver_obj.type != IndigoObject::SAVER)
+            throw IndigoError("indigoAppend() is only applicable to saver objects. %s object was passed as a saver", saver_obj.debugInfo());
+        IndigoSaver& saver = (IndigoSaver&)saver_obj;
+        saver.appendObject(obj);
+        return 1;
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveCdxml(int item, int output)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+
+        if (IndigoBaseMolecule::is(obj))
+        {
+            MoleculeCdxmlSaver saver(out);
+            if (obj.type == IndigoObject::MOLECULE || obj.type == IndigoObject::REACTION_MOLECULE)
+            {
+                Molecule& mol = obj.getMolecule();
+                saver.saveMolecule(mol);
+            }
+            else if (obj.type == IndigoObject::QUERY_MOLECULE)
+            {
+                QueryMolecule& mol = obj.getQueryMolecule();
+                saver.saveMolecule(mol);
+            }
+            out.flush();
+            return 1;
+        }
+        if (IndigoKetDocument::is(obj))
+        {
+            MoleculeCdxmlSaver saver(out);
+            saver.saveMolecule(obj.getBaseMolecule());
+            out.flush();
+            return 1;
+        }
+        if (IndigoBaseReaction::is(obj))
+        {
+            ReactionCdxmlSaver saver(out);
+            if (obj.type == IndigoObject::REACTION || obj.type == IndigoObject::PATHWAY_REACTION)
+            {
+                saver.saveReaction(obj.getBaseReaction());
+            }
+            else if (obj.type == IndigoObject::QUERY_REACTION)
+            {
+                QueryReaction& rxn = obj.getQueryReaction();
+                saver.saveReaction(rxn);
+            }
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveCdxml(): expected molecule or reaction, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}
+
+CEXPORT int indigoSaveCdx(int item, int output)
+{
+    INDIGO_BEGIN
+    {
+        IndigoObject& obj = self.getObject(item);
+        Output& out = IndigoOutput::get(self.getObject(output));
+
+        if (IndigoBaseMolecule::is(obj))
+        {
+            MoleculeCdxmlSaver saver(out, true);
+            if (obj.type == IndigoObject::MOLECULE)
+            {
+                Molecule& mol = obj.getMolecule();
+                saver.saveMolecule(mol);
+            }
+            else if (obj.type == IndigoObject::QUERY_MOLECULE)
+            {
+                QueryMolecule& mol = obj.getQueryMolecule();
+                saver.saveMolecule(mol);
+            }
+            out.flush();
+            return 1;
+        }
+        if (IndigoBaseReaction::is(obj))
+        {
+            ReactionCdxmlSaver saver(out, true);
+            if (obj.type == IndigoObject::REACTION || obj.type == IndigoObject::PATHWAY_REACTION)
+            {
+                saver.saveReaction(obj.getBaseReaction());
+            }
+            else if (obj.type == IndigoObject::QUERY_REACTION)
+            {
+                QueryReaction& rxn = obj.getQueryReaction();
+                saver.saveReaction(rxn);
+            }
+            out.flush();
+            return 1;
+        }
+        throw IndigoError("indigoSaveCdxml(): expected molecule or reaction, got %s", obj.debugInfo());
+    }
+    INDIGO_END(-1);
+}

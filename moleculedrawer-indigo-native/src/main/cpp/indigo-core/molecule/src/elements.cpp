@@ -1,0 +1,784 @@
+/****************************************************************************
+ * Copyright (C) from 2009 to Present EPAM Systems.
+ *
+ * This file is part of Indigo toolkit.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ***************************************************************************/
+
+#include <array>
+#include <cctype>
+#include <climits>
+#include <cmath>
+#include <cstdarg>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+
+#include "base_cpp/array.h"
+#include "base_cpp/scanner.h"
+#include "molecule/elements.h"
+#include "molecule/valence_model.h"
+
+using namespace indigo;
+
+IMPL_ERROR(Element, "element");
+
+namespace
+{
+    // Provider hook installed by api/c so that core-level static valence
+    // calculations can pick up the current Indigo TLS session's valence_mode
+    // when the caller has no molecule reference to read it from.
+    Element::ValenceModeProvider g_default_mode_provider = nullptr;
+
+    ValenceMode resolveValenceMode(std::optional<ValenceMode> explicit_mode)
+    {
+        if (explicit_mode)
+            return *explicit_mode;
+        if (g_default_mode_provider)
+            return g_default_mode_provider();
+        return ValenceMode::BIOVIA_2009;
+    }
+} // namespace
+
+void Element::setDefaultValenceModeProvider(ValenceModeProvider provider)
+{
+    g_default_mode_provider = provider;
+}
+
+const Element& Element::_instance()
+{
+    static Element instance;
+    return instance;
+}
+
+Element::Element()
+{
+    _initAllPeriodic();
+    _initAllIsotopes();
+}
+
+void Element::_initPeriodic(int element, const char* name, int period, int group)
+{
+    ElementParameters& parameters = _element_parameters.at(element);
+
+    strncpy(parameters.name, name, 3);
+    parameters.group = group;
+    parameters.period = period;
+
+    _map[name] = element;
+}
+
+int Element::radicalElectrons(int radical)
+{
+    if (radical == RADICAL_DOUBLET)
+        return 1;
+    if (radical == RADICAL_SINGLET || radical == RADICAL_TRIPLET)
+        return 2;
+    return 0;
+}
+
+int Element::radicalOrbitals(int radical)
+{
+    if (radical != 0)
+        return 1;
+    return 0;
+}
+
+void Element::_initAllPeriodic()
+{
+#define INIT(elem, period, group) _initPeriodic(ELEM_##elem, #elem, period, group)
+
+    INIT(H, 1, 1);
+    INIT(He, 1, 8);
+    INIT(Li, 2, 1);
+    INIT(Be, 2, 2);
+    INIT(B, 2, 3);
+    INIT(C, 2, 4);
+    INIT(N, 2, 5);
+    INIT(O, 2, 6);
+    INIT(F, 2, 7);
+    INIT(Ne, 2, 8);
+    INIT(Na, 3, 1);
+    INIT(Mg, 3, 2);
+    INIT(Al, 3, 3);
+    INIT(Si, 3, 4);
+    INIT(P, 3, 5);
+    INIT(S, 3, 6);
+    INIT(Cl, 3, 7);
+    INIT(Ar, 3, 8);
+    INIT(K, 4, 1);
+    INIT(Ca, 4, 2);
+    INIT(Sc, 4, 3);
+    INIT(Ti, 4, 4);
+    INIT(V, 4, 5);
+    INIT(Cr, 4, 6);
+    INIT(Mn, 4, 7);
+    INIT(Fe, 4, 8);
+    INIT(Co, 4, 8);
+    INIT(Ni, 4, 8);
+    INIT(Cu, 4, 1);
+    INIT(Zn, 4, 2);
+    INIT(Ga, 4, 3);
+    INIT(Ge, 4, 4);
+    INIT(As, 4, 5);
+    INIT(Se, 4, 6);
+    INIT(Br, 4, 7);
+    INIT(Kr, 4, 8);
+    INIT(Rb, 5, 1);
+    INIT(Sr, 5, 2);
+    INIT(Y, 5, 3);
+    INIT(Zr, 5, 4);
+    INIT(Nb, 5, 5);
+    INIT(Mo, 5, 6);
+    INIT(Tc, 5, 7);
+    INIT(Ru, 5, 8);
+    INIT(Rh, 5, 8);
+    INIT(Pd, 5, 8);
+    INIT(Ag, 5, 1);
+    INIT(Cd, 5, 2);
+    INIT(In, 5, 3);
+    INIT(Sn, 5, 4);
+    INIT(Sb, 5, 5);
+    INIT(Te, 5, 6);
+    INIT(I, 5, 7);
+    INIT(Xe, 5, 8);
+    INIT(Cs, 6, 1);
+    INIT(Ba, 6, 2);
+    INIT(La, 6, 3);
+    INIT(Ce, 6, 3);
+    INIT(Pr, 6, 3);
+    INIT(Nd, 6, 3);
+    INIT(Pm, 6, 3);
+    INIT(Sm, 6, 3);
+    INIT(Eu, 6, 3);
+    INIT(Gd, 6, 3);
+    INIT(Tb, 6, 3);
+    INIT(Dy, 6, 3);
+    INIT(Ho, 6, 3);
+    INIT(Er, 6, 3);
+    INIT(Tm, 6, 3);
+    INIT(Yb, 6, 3);
+    INIT(Lu, 6, 3);
+    INIT(Hf, 6, 4);
+    INIT(Ta, 6, 5);
+    INIT(W, 6, 6);
+    INIT(Re, 6, 7);
+    INIT(Os, 6, 8);
+    INIT(Ir, 6, 8);
+    INIT(Pt, 6, 8);
+    INIT(Au, 6, 1);
+    INIT(Hg, 6, 2);
+    INIT(Tl, 6, 3);
+    INIT(Pb, 6, 4);
+    INIT(Bi, 6, 5);
+    INIT(Po, 6, 6);
+    INIT(At, 6, 7);
+    INIT(Rn, 6, 8);
+    INIT(Fr, 7, 1);
+    INIT(Ra, 7, 2);
+    INIT(Ac, 7, 3);
+    INIT(Th, 7, 3);
+    INIT(Pa, 7, 3);
+    INIT(U, 7, 3);
+    INIT(Np, 7, 3);
+    INIT(Pu, 7, 3);
+    INIT(Am, 7, 3);
+    INIT(Cm, 7, 3);
+    INIT(Bk, 7, 3);
+    INIT(Cf, 7, 3);
+    INIT(Es, 7, 3);
+    INIT(Fm, 7, 3);
+    INIT(Md, 7, 3);
+    INIT(No, 7, 3);
+    INIT(Lr, 7, 3);
+    INIT(Rf, 7, 4);
+    INIT(Db, 7, 5);
+    INIT(Sg, 7, 6);
+    INIT(Bh, 7, 7);
+    INIT(Hs, 7, 8);
+    INIT(Mt, 7, 8);
+    INIT(Ds, 7, 8);
+    INIT(Rg, 7, 1);
+    INIT(Cn, 7, 2);
+    INIT(Nh, 7, 3);
+    INIT(Fl, 7, 4);
+    INIT(Mc, 7, 5);
+    INIT(Lv, 7, 6);
+    INIT(Ts, 7, 7);
+    INIT(Og, 7, 8);
+#undef INIT
+}
+
+int Element::fromString(const char* name)
+{
+    const auto& map = _instance()._map;
+    if (map.count(name) > 0)
+    {
+        return map.at(name);
+    }
+    throw Error("fromString(): element %s not supported", name);
+}
+
+int Element::fromString2(const char* name)
+{
+    const auto& map = _instance()._map;
+    if (map.count(name) > 0)
+    {
+        return map.at(name);
+    }
+    return -1;
+}
+
+int Element::fromChar(char c)
+{
+    char str[2] = {c, 0};
+
+    return fromString(str);
+}
+
+int Element::fromTwoChars(char c1, char c2)
+{
+    char str[3] = {c1, c2, 0};
+
+    return fromString(str);
+}
+
+int Element::fromTwoChars2(char c1, char c2)
+{
+    char str[3] = {c1, c2, 0};
+
+    return fromString2(str);
+}
+
+int Element::fromTwoChars2(char c1, int c2)
+{
+    if (c2 < 0)
+        return -1;
+    return fromTwoChars2(c1, static_cast<char>(c2));
+}
+
+bool Element::isHalogen(int element)
+{
+    return element == ELEM_F || element == ELEM_Cl || element == ELEM_Br || element == ELEM_I || element == ELEM_At;
+}
+
+bool Element::isMetal(int element)
+{
+    return (element >= ELEM_Li && element <= ELEM_Be) || (element >= ELEM_Na && element <= ELEM_Mg) || (element >= ELEM_K && element <= ELEM_Zn) ||
+           (element >= ELEM_Rb && element <= ELEM_Cd) || (element >= ELEM_Cs && element <= ELEM_Hg) || (element >= ELEM_Fr && element <= ELEM_Cn);
+}
+
+const char* Element::toString(int element)
+{
+    if (element < 0 || element > ELEM_MAX)
+        throw Error("bad element number: %d", element);
+
+    return _instance()._element_parameters.at(element).name;
+}
+
+const char* Element::toString(int element, int isotope)
+{
+    if (element == ELEM_H)
+    {
+        if (isotope == DEUTERIUM)
+            return "D";
+        if (isotope == TRITIUM)
+            return "T";
+    }
+    return toString(element);
+}
+
+int Element::calcValenceOfAromaticAtom(int elem, int charge, int n_arom, int min_conn)
+{
+    if (elem == ELEM_C)
+        return 4;
+    if (elem == ELEM_N)
+        return charge == 1 ? 4 : 3;
+    if (elem == ELEM_O)
+        return charge >= 1 ? 3 : 2;
+
+    // Empirical PubChem-derived lookup; first match wins (specific → general)
+    struct Entry
+    {
+        int el, q, na, mc_lo, mc_hi, val;
+    };
+    static constexpr int ANY_Q = INT_MIN;
+    static constexpr int MC_INF = INT_MAX;
+    static constexpr Entry table[] = {
+        // S⁰
+        {ELEM_S, 0, 2, 2, 2, 2},
+        {ELEM_S, 0, 2, 3, 4, 4}, // CID 11972190, 20611310
+        {ELEM_S, 0, 2, 5, MC_INF, 6},
+        {ELEM_S, 0, 3, 0, 4, 4}, // CID 10091381, 20756501
+        {ELEM_S, 0, 3, 5, MC_INF, 6},
+        {ELEM_S, 0, 4, 4, 4, 4}, // CID 10882272, 24829837
+        {ELEM_S, 0, 4, 0, MC_INF, 6},
+        // S⁺
+        {ELEM_S, 1, 2, 2, 2, 3},
+        {ELEM_S, 1, 2, 3, 4, 5}, // CID 9922592
+        // P⁰
+        {ELEM_P, 0, 2, 2, 3, 3}, // CID 164575, 10568539
+        {ELEM_P, 0, 2, 4, 4, 5}, // CID 140786, 341499, 17776485, 20207916
+        {ELEM_P, 0, 3, 3, 3, 3}, // CID 15973306
+        {ELEM_P, 0, 3, 5, 5, 5}, // CID 10887416
+        {ELEM_P, 0, 4, 4, 4, 5},
+        // P⁺
+        {ELEM_P, 1, 2, 3, 3, 4},
+        // P⁻
+        {ELEM_P, -1, 2, 2, 2, 2}, // CID 10932222
+        // Se⁰
+        {ELEM_Se, 0, 2, 2, 2, 2},
+        {ELEM_Se, 0, 2, 3, 4, 4}, // CID 10262587, 21204858, 14984497
+        // Se⁺
+        {ELEM_Se, 1, 2, 2, 3, 3}, // CID 10872228, 11115581
+        // As⁰
+        {ELEM_As, 0, 2, 2, 3, 3}, // CID 136132, 237687
+        // Te⁰
+        {ELEM_Te, 0, 2, 2, 2, 3}, // CID 136053
+        {ELEM_Te, 0, 2, 4, 4, 4}, // CID 3088544, 11457076
+        {ELEM_Te, 0, 4, 4, 4, 4}, // CID 11070061
+        // Te⁺
+        {ELEM_Te, 1, 2, 3, 3, 3}, // CID 20802344
+        // B
+        {ELEM_B, ANY_Q, 2, 3, 3, 3}, // CID 574072
+        // Si
+        {ELEM_Si, ANY_Q, 2, 3, 3, 4}, // CID 18943170
+    };
+
+    for (const auto& e : table)
+        if (e.el == elem && (e.q == ANY_Q || e.q == charge) && e.na == n_arom && min_conn >= e.mc_lo && min_conn <= e.mc_hi)
+            return e.val;
+
+    return -1;
+}
+
+bool Element::calcValence(int elem, int charge, int radical, int conn, int& valence, int& hyd, bool to_throw, bool* nonStandard,
+                          std::optional<ValenceMode> mode)
+{
+    return ValenceModel::instance(resolveValenceMode(mode)).calcValence(elem, charge, radical, conn, valence, hyd, to_throw, nonStandard);
+}
+
+int Element::calcValenceMinusHyd(int elem, int charge, int radical, int conn)
+{
+    const int group = Element::group(elem);
+    const int rad = radicalElectrons(radical);
+
+    // Certain charges are absorbed by electronic structure, not consuming a valence slot
+    bool absorbed = false;
+
+    switch (group)
+    {
+    case 3:
+        if ((elem == ELEM_B || elem == ELEM_Al || elem == ELEM_Ga || elem == ELEM_In) && charge == -1 && rad + conn <= 4)
+            absorbed = true;
+        break;
+    case 5:
+        // d-block group-5 (V, Nb, Ta, Db) filtered by transition-metal early exit
+        if (charge == 1 || charge == 2)
+            absorbed = true;
+        break;
+    case 6:
+        if (elem == ELEM_O)
+            absorbed = (charge >= 1);
+        else if (elem == ELEM_S || elem == ELEM_Se || elem == ELEM_Po)
+            absorbed = (charge == 1 || charge == -1);
+        break;
+    case 7:
+        if ((elem == ELEM_Cl || elem == ELEM_Br || elem == ELEM_I || elem == ELEM_At) && charge == 1)
+            absorbed = true;
+        break;
+    }
+
+    return absorbed ? (rad + conn) : (rad + conn + abs(charge));
+}
+
+int Element::group(int elem)
+{
+    return _instance()._element_parameters.at(elem).group;
+}
+
+int Element::period(int elem)
+{
+    return _instance()._element_parameters.at(elem).period;
+}
+
+int Element::read(Scanner& scanner)
+{
+    char str[3] = {0, 0, 0};
+
+    str[0] = scanner.readChar();
+
+    if (islower(scanner.lookNext()))
+        str[1] = scanner.readChar();
+
+    return fromString(str);
+}
+
+void Element::_setStandardAtomicWeightIndex(int element, int index)
+{
+    ElementParameters& p = _element_parameters.at(element);
+    p.natural_isotope_index = index;
+}
+
+void Element::_addElementIsotope(int element, int isotope, double mass, double isotopic_composition)
+{
+    auto key = IsotopeKey{element, isotope};
+    auto value = IsotopeValue{mass, isotopic_composition};
+    _isotope_parameters_map[key] = value;
+}
+
+void Element::_initAllIsotopes()
+{
+#define ADD _addElementIsotope
+#define SET _setStandardAtomicWeightIndex
+#define NATURAL IsotopeKey::NATURAL
+
+#include "elements_isotopes.inc"
+
+#undef ADD
+#undef SET
+#undef NATURAL
+
+    _initDefaultIsotopes();
+}
+
+double Element::getStandardAtomicWeight(int element)
+{
+    return _instance()._getStandardAtomicWeight(element);
+}
+
+int Element::getDefaultIsotope(int element)
+{
+    const ElementParameters& p = _instance()._element_parameters.at(element);
+    return p.default_isotope;
+}
+
+int Element::getMostAbundantIsotope(int element)
+{
+    const ElementParameters& p = _instance()._element_parameters.at(element);
+    return p.most_abundant_isotope;
+}
+
+bool Element::getIsotopicComposition(int element, int isotope, double& res)
+{
+    const auto key = IsotopeKey{element, isotope};
+    if (_instance()._isotope_parameters_map.count(key))
+    {
+        res = _instance()._isotope_parameters_map.at(key).isotopic_composition;
+        return true;
+    }
+    return false;
+}
+
+void Element::getMinMaxIsotopeIndex(int element, int& min, int& max)
+{
+    const ElementParameters& p = _instance()._element_parameters.at(element);
+    min = p.min_isotope_index;
+    max = p.max_isotope_index;
+}
+
+double Element::getRelativeIsotopicMass(int element, int isotope)
+{
+    return _instance()._getRelativeIsotopicMass(element, isotope);
+}
+
+void Element::_initDefaultIsotopes()
+{
+    std::vector<IsotopeKey> def_isotope_index;
+    def_isotope_index.resize(_element_parameters.size());
+
+    std::vector<double> most_abundant_isotope_fraction;
+    most_abundant_isotope_fraction.resize(_element_parameters.size());
+
+    for (unsigned int i = ELEM_MIN; i < _element_parameters.size(); i++)
+    {
+        _element_parameters.at(i).default_isotope = IsotopeKey::NATURAL;
+        _element_parameters.at(i).most_abundant_isotope = IsotopeKey::NATURAL;
+        _element_parameters.at(i).min_isotope_index = 10000;
+        _element_parameters.at(i).max_isotope_index = 0;
+    }
+
+    for (auto& item : _isotope_parameters_map)
+    {
+        const auto& key = item.first;
+        auto& value = item.second;
+
+        if (key.isotope == IsotopeKey::NATURAL)
+        {
+            continue;
+        }
+        double atomic_weight = _getStandardAtomicWeight(key.element);
+
+        double diff_best = 1e6;
+        if (def_isotope_index[key.element].isotope != IsotopeKey::NATURAL)
+        {
+            auto best_iso = def_isotope_index[key.element];
+            if (_isotope_parameters_map.count(best_iso) > 0)
+            {
+                const auto& best = _isotope_parameters_map.at(best_iso);
+                diff_best = fabs(best.mass - atomic_weight);
+            }
+        }
+        double diff_cur = fabs(value.mass - atomic_weight);
+
+        if (diff_best > diff_cur)
+        {
+            def_isotope_index[key.element] = key;
+            _element_parameters.at(key.element).default_isotope = key.isotope;
+            diff_best = diff_cur;
+        }
+
+        int& min_iso = _element_parameters.at(key.element).min_isotope_index;
+        int& max_iso = _element_parameters.at(key.element).max_isotope_index;
+
+        if (min_iso > key.isotope)
+        {
+            min_iso = key.isotope;
+        }
+
+        if (max_iso < key.isotope)
+        {
+            max_iso = key.isotope;
+        }
+
+        if (value.isotopic_composition > most_abundant_isotope_fraction[key.element])
+        {
+            most_abundant_isotope_fraction[key.element] = value.isotopic_composition;
+            _element_parameters.at(key.element).most_abundant_isotope = key.isotope;
+        }
+    }
+
+    for (unsigned int i = ELEM_MIN; i < _element_parameters.size(); i++)
+    {
+        ElementParameters& element = _element_parameters.at(i);
+
+        if (element.natural_isotope_index != IsotopeKey::NATURAL)
+            element.default_isotope = element.natural_isotope_index;
+
+        if (element.most_abundant_isotope == IsotopeKey::NATURAL)
+            element.most_abundant_isotope = element.default_isotope;
+
+        // Post-condition: usually you can't catch this as it's being thrown before main()
+        if (element.default_isotope == IsotopeKey::NATURAL)
+            throw Error("default isotope is not set on element #%d", i);
+    }
+}
+
+int Element::orbitals(int elem, bool use_d_orbital)
+{
+    int group = Element::group(elem);
+    int period = Element::period(elem);
+
+    switch (group)
+    {
+    case 1:
+        return 1;
+    case 2:
+        return 2;
+    default:
+
+        return (use_d_orbital && period > 2 && group >= 4) ? 9 : 4;
+    }
+}
+
+int Element::electrons(int elem, int charge)
+{
+    return Element::group(elem) - charge;
+}
+
+int Element::baseValence(int eff)
+{
+    return (eff <= 4) ? eff : (8 - eff);
+}
+
+ValenceResult Element::calcValenceResult(int elem, int charge, int radical, int conn, std::optional<ValenceMode> mode)
+{
+    ValenceResult r;
+    r.valid = calcValence(elem, charge, radical, conn, r.valence, r.implicit_h, false, &r.nonStandard, mode);
+    return r;
+}
+
+int Element::getMaximumConnectivity(int elem, int charge, int radical, bool use_d_orbital)
+{
+    int rad_electrons = radicalElectrons(radical);
+    int electrons = Element::electrons(elem, charge) - rad_electrons;
+    int rad_orbitals = radicalOrbitals(radical);
+    int vacant_orbitals = Element::orbitals(elem, use_d_orbital) - rad_orbitals;
+    if (electrons <= vacant_orbitals)
+        return electrons;
+    else
+        return 2 * vacant_orbitals - electrons;
+}
+
+bool Element::IsotopeKey::operator<(const IsotopeKey& right) const
+{
+    return std::tie(element, isotope) < std::tie(right.element, right.isotope);
+}
+
+bool Element::canBeAromatic(int element)
+{
+    return (element >= ELEM_B && element <= ELEM_F) ||   // Period 2: B–F
+           (element >= ELEM_Al && element <= ELEM_Cl) || // Period 3: Al–Cl
+           (element >= ELEM_Ga && element <= ELEM_Br) || // Period 4: Ga–Br
+           (element >= ELEM_In && element <= ELEM_I) ||  // Period 5: In–I
+           (element >= ELEM_Tl && element <= ELEM_At);   // Period 6: Tl–At
+}
+
+double Element::_getStandardAtomicWeight(int element) const
+{
+    const ElementParameters& p = _element_parameters.at(element);
+    return _getRelativeIsotopicMass(element, p.natural_isotope_index);
+}
+
+double Element::_getRelativeIsotopicMass(int element, int isotope) const
+{
+    const auto key = IsotopeKey{element, isotope};
+    if (_isotope_parameters_map.count(key))
+    {
+        return _isotope_parameters_map.at(key).mass;
+    }
+    throw Error("getRelativeIsotopicMass: isotope (%s, %d) not found", toString(element), isotope);
+}
+
+int Element::getNumOuterElectrons(int element)
+{
+    // clang-format off
+    constexpr std::array<int, 119> outerElements{
+        0,  // [0]  Pseudo-element
+        1,  // [1]  H
+        2,  // [2]  He
+        1,  // [3]  Li
+        2,  // [4]  Be
+        3,  // [5]  B
+        4,  // [6]  C
+        5,  // [7]  N
+        6,  // [8]  O
+        7,  // [9]  F
+        8,  // [10] Ne
+        1,  // [11] Na
+        2,  // [12] Mg
+        3,  // [13] Al
+        4,  // [14] Si
+        5,  // [15] P
+        6,  // [16] S
+        7,  // [17] Cl
+        8,  // [18] Ar
+        1,  // [19] K
+        2,  // [20] Ca
+        3,  // [21] Sc
+        4,  // [22] Ti
+        5,  // [23] V
+        6,  // [24] Cr
+        7,  // [25] Mn
+        8,  // [26] Fe
+        9,  // [27] Co
+        10, // [28] Ni
+        1,  // [29] Cu
+        2,  // [30] Zn
+        3,  // [31] Ga
+        4,  // [32] Ge
+        5,  // [33] As
+        6,  // [34] Se
+        7,  // [35] Br
+        8,  // [36] Kr
+        1,  // [37] Rb
+        2,  // [38] Sr
+        3,  // [39] Y
+        4,  // [40] Zr
+        5,  // [41] Nb
+        6,  // [42] Mo
+        7,  // [43] Tc
+        8,  // [44] Ru
+        9,  // [45] Rh
+        10, // [46] Pd
+        1,  // [47] Ag
+        2,  // [48] Cd
+        3,  // [49] In
+        4,  // [50] Sn
+        5,  // [51] Sb
+        6,  // [52] Te
+        7,  // [53] I
+        8,  // [54] Xe
+        1,  // [55] Cs
+        2,  // [56] Ba
+        3,  // [57] La
+        4,  // [58] Ce  (4f1 5d1 6s2)
+        5,  // [59] Pr  (4f3 6s2)
+        6,  // [60] Nd  (4f4 6s2)
+        7,  // [61] Pm  (4f5 6s2)
+        8,  // [62] Sm  (4f6 6s2)
+        9,  // [63] Eu  (4f7 6s2)
+        10, // [64] Gd  (4f7 5d1 6s2)
+        11, // [65] Tb  (4f9 6s2)
+        12, // [66] Dy  (4f10 6s2)
+        13, // [67] Ho  (4f11 6s2)
+        14, // [68] Er  (4f12 6s2)
+        15, // [69] Tm  (4f13 6s2)
+        2,  // [70] Yb  (4f14 6s2, f14 core)
+        3,  // [71] Lu  (4f14 5d1 6s2, f14 core)
+        4,  // [72] Hf
+        5,  // [73] Ta
+        6,  // [74] W
+        7,  // [75] Re
+        8,  // [76] Os
+        9,  // [77] Ir
+        10, // [78] Pt  (5d9 6s1)
+        1,  // [79] Au  (5d10 6s1, d10 core)
+        2,  // [80] Hg
+        3,  // [81] Tl
+        4,  // [82] Pb
+        5,  // [83] Bi
+        6,  // [84] Po
+        7,  // [85] At
+        8,  // [86] Rn
+        1,  // [87] Fr
+        2,  // [88] Ra
+        3,  // [89] Ac  (6d1 7s2)
+        4,  // [90] Th  (6d2 7s2)
+        5,  // [91] Pa  (5f2 6d1 7s2)
+        6,  // [92] U   (5f3 6d1 7s2)
+        7,  // [93] Np  (5f4 6d1 7s2)
+        8,  // [94] Pu  (5f6 7s2)
+        9,  // [95] Am  (5f7 7s2)
+        10, // [96] Cm  (5f7 6d1 7s2)
+        11, // [97] Bk  (5f9 7s2)
+        12, // [98] Cf  (5f10 7s2)
+        13, // [99] Es  (5f11 7s2)
+        14, // [100] Fm (5f12 7s2)
+        15, // [101] Md (5f13 7s2)
+        2,  // [102] No (5f14 7s2, f14 core)
+        3,  // [103] Lr (5f14 7s2 7p1, f14 core)
+        4,  // [104] Rf
+        5,  // [105] Db
+        6,  // [106] Sg
+        7,  // [107] Bh
+        8,  // [108] Hs
+        9,  // [109] Mt
+        10, // [110] Ds
+        1,  // [111] Rg (homolog of Au)
+        2,  // [112] Cn (homolog of Hg)
+        3,  // [113] Nh
+        4,  // [114] Fl
+        5,  // [115] Mc
+        6,  // [116] Lv
+        7,  // [117] Ts
+        8   // [118] Og
+    };
+    // clang-format on
+    if (element < 0 || element >= static_cast<int>(outerElements.size()))
+    {
+        throw Error("element number %d out of valid range for outer electrons", element);
+    }
+    return outerElements[element];
+}

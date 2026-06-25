@@ -1,0 +1,79 @@
+/****************************************************************************
+ * Copyright (C) from 2009 to Present EPAM Systems.
+ *
+ * This file is part of Indigo toolkit.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ***************************************************************************/
+
+#ifndef __reaction_json_saver__
+#define __reaction_json_saver__
+
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+
+#include "base_cpp/exception.h"
+#include "layout/metalayout.h"
+#include "molecule/meta_commons.h"
+
+namespace indigo
+{
+
+    class Output;
+    class BaseReaction;
+    class BaseMolecule;
+    struct Vec2f;
+    class MoleculeJsonSaver;
+
+    class ReactionJsonSaver
+    {
+    public:
+        explicit ReactionJsonSaver(Output& output);
+        ~ReactionJsonSaver();
+
+        void saveReaction(BaseReaction& rxn);
+        bool add_stereo_desc;
+        bool add_reaction_data;
+        bool pretty_json;
+        KETVersion ket_version;
+        bool use_native_precision;
+        int native_precision;
+        indigo::LayoutOptions layout_options;
+        DECL_ERROR;
+
+    protected:
+        Output& _output;
+
+    private:
+        ReactionJsonSaver(const ReactionJsonSaver&); // no implicit copy
+        static void _getBounds(BaseMolecule& mol, Vec2f& min_vec, Vec2f& max_vec, float scale);
+
+        std::unordered_map<int, std::string> _arrow_type2string = {
+            {ReactionComponent::ARROW_BASIC, "open-angle"},
+            {ReactionComponent::ARROW_FILLED_TRIANGLE, "filled-triangle"},
+            {ReactionComponent::ARROW_FILLED_BOW, "filled-bow"},
+            {ReactionComponent::ARROW_DASHED, "dashed-open-angle"},
+            {ReactionComponent::ARROW_FAILED, "failed"},
+            {ReactionComponent::ARROW_BOTH_ENDS_FILLED_TRIANGLE, "both-ends-filled-triangle"},
+            {ReactionComponent::ARROW_EQUILIBRIUM_FILLED_HALF_BOW, "equilibrium-filled-half-bow"},
+            {ReactionComponent::ARROW_EQUILIBRIUM_FILLED_TRIANGLE, "equilibrium-filled-triangle"},
+            {ReactionComponent::ARROW_EQUILIBRIUM_OPEN_ANGLE, "equilibrium-open-angle"},
+            {ReactionComponent::ARROW_UNBALANCED_EQUILIBRIUM_FILLED_HALF_BOW, "unbalanced-equilibrium-filled-half-bow"},
+            {ReactionComponent::ARROW_UNBALANCED_EQUILIBRIUM_LARGE_FILLED_HALF_BOW, "unbalanced-equilibrium-large-filled-half-bow"},
+            {ReactionComponent::ARROW_BOTH_ENDS_FILLED_TRIANGLE, "unbalanced-equilibrium-filled-half-triangle"},
+            {ReactionComponent::ARROW_RETROSYNTHETIC, "retrosynthetic"}};
+    };
+
+} // namespace indigo
+
+#endif

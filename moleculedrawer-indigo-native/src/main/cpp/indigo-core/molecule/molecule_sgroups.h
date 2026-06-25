@@ -1,0 +1,332 @@
+/****************************************************************************
+ * Copyright (C) from 2009 to Present EPAM Systems.
+ *
+ * This file is part of Indigo toolkit.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ***************************************************************************/
+
+#ifndef __molecule_sgroups__
+#define __molecule_sgroups__
+
+#include "base_cpp/array.h"
+#include "base_cpp/nullable.h"
+#include "base_cpp/obj_pool.h"
+#include "base_cpp/ptr_pool.h"
+#include "math/algebra.h"
+#include <vector>
+
+#ifdef _WIN32
+#pragma warning(push)
+#pragma warning(disable : 4251)
+#endif
+
+namespace indigo
+{
+
+    class BaseMolecule;
+
+    enum class DisplayOption
+    {
+        Undefined = -1,
+        Expanded = 0,
+        Contracted = 1
+    };
+
+    class DLLEXPORT SGroup
+    {
+    public:
+        enum
+        {
+            SG_TYPE_GEN = 0,
+            SG_TYPE_DAT,
+            SG_TYPE_SUP,
+            SG_TYPE_SRU,
+            SG_TYPE_MUL,
+            SG_TYPE_MON,
+            SG_TYPE_MER,
+            SG_TYPE_COP,
+            SG_TYPE_CRO,
+            SG_TYPE_MOD,
+            SG_TYPE_GRA,
+            SG_TYPE_COM,
+            SG_TYPE_MIX,
+            SG_TYPE_FOR,
+            SG_TYPE_ANY
+        };
+
+        enum
+        {
+            SG_SUBTYPE_ALT = 1,
+            SG_SUBTYPE_RAN,
+            SG_SUBTYPE_BLO
+        };
+
+        enum
+        {
+            HEAD_TO_HEAD = 1,
+            HEAD_TO_TAIL,
+            EITHER
+        };
+
+        enum
+        {
+            SG_TYPE = 1,
+            SG_CLASS,
+            SG_LABEL,
+            SG_DISPLAY_OPTION,
+            SG_BRACKET_STYLE,
+            SG_DATA,
+            SG_DATA_NAME,
+            SG_DATA_TYPE,
+            SG_DATA_DESCRIPTION,
+            SG_DATA_DISPLAY,
+            SG_DATA_LOCATION,
+            SG_DATA_TAG,
+            SG_QUERY_CODE,
+            SG_QUERY_OPER,
+            SG_PARENT,
+            SG_CHILD,
+            SG_ATOMS,
+            SG_BONDS
+        };
+
+        struct SgType
+        {
+            const int int_type;
+            const char* str_type;
+        };
+
+        SGroup();
+        virtual ~SGroup();
+
+        int sgroup_type;              // group type, represnted with STY in Molfile format
+        Nullable<int> sgroup_subtype; // group subtype, represnted with SST in Molfile format
+        int index;                    // internal SGroup index; V3000 field 1, V2000 M STY sss. Used for cross-refs (PARENT, SPL).
+        int ext_index;                // external SGroup index; V3000 field 3 (extindex), V2000 M SLB vvv. 0 = auto-assign per spec.
+        Nullable<int> parent_group;   // parent group index; represented with PARENT in V3000, SPL in V2000
+        Nullable<int> parent_idx;     // parent group array position; resolved from parent_group
+        // TODO: leave only parent_idx
+
+        Array<int> atoms;  // represented with SAL in Molfile format
+        Array<int> xbonds; // crossing bonds, represented with XBONDS/SBL in Molfile format
+
+        virtual const Array<int>& getBonds() const
+        {
+            return xbonds;
+        }
+        virtual Array<int>& getBonds()
+        {
+            return xbonds;
+        }
+
+        Array<char> label;                  // SMT in Molfile format (LABEL in V3000)
+        Nullable<int> brk_style;            // represented with SBT in Molfile format
+        Array<Vec2f[2]> brackets;           // represented with SDI in Molfile format
+        Nullable<DisplayOption> contracted; // display option (-1 if undefined, 0 - expanded, 1 - contracted)
+
+        static const char* typeToString(int sg_type);
+        static int getType(const char* sg_type);
+
+    private:
+        SGroup(const SGroup&);
+    };
+
+    class DLLEXPORT DataSGroup : public SGroup
+    {
+    public:
+        DataSGroup();
+        ~DataSGroup() override;
+
+        Array<int> cbonds; // chemical bonds, represented with CBONDS/SBL in Molfile format
+
+        const Array<int>& getBonds() const override
+        {
+            return cbonds;
+        }
+        Array<int>& getBonds() override
+        {
+            return cbonds;
+        }
+
+        Array<char> description;     // SDT in Molfile format (filed units or format)
+        Array<char> name;            // SDT in Molfile format (field name)
+        Array<char> type;            // SDT in Molfile format (field type)
+        Array<char> querycode;       // SDT in Molfile format (query code)
+        Array<char> queryoper;       // SDT in Molfile format (query operator)
+        Array<char> data;            // SCD/SED in Molfile format (field data)
+        Array<char> sa_natreplace;   // NATREPLACE (V3000 - 2017)
+        Nullable<Vec2f> display_pos; // SDD in Molfile format
+        bool detached;               // or attached
+        bool relative;               // or absolute
+        bool display_units;
+        Nullable<int> num_chars; // number of characters
+        Nullable<int> dasp_pos;
+        Nullable<char> tag; // tag
+        static constexpr char mrv_implicit_h[] = "MRV_IMPLICIT_H";
+        static constexpr char impl_prefix[] = "IMPL_H";
+        static constexpr size_t impl_prefix_len = sizeof(impl_prefix) - 1;
+        bool isMrv_implicit();
+        void setMrv_implicit(int atom_idx, int hydrogens_count);
+
+    private:
+        DataSGroup(const DataSGroup&);
+    };
+
+    class DLLEXPORT Superatom : public SGroup
+    {
+    public:
+        Superatom();
+        ~Superatom() override;
+
+        Array<char> sa_class;      // SCL in Molfile format
+                                   // SDS in Molfile format
+        Nullable<int> seqid;       // SEQID (V3000 - 2017)
+        Array<char> sa_natreplace; // NATREPLACE (V3000 - 2017)
+
+        bool unresolved;
+
+        struct _AttachmentPoint
+        {
+            _AttachmentPoint() : aidx(-1), lvidx(-1)
+            {
+            }
+            _AttachmentPoint(int atom_id) : aidx(atom_id), lvidx(-1)
+            {
+                apid.push(0);
+            }
+            int aidx;
+            int lvidx;
+            Array<char> apid;
+        };
+        ObjPool<_AttachmentPoint> attachment_points; // SAP in Molfile format
+
+        struct _BondConnection
+        {
+            int bond_idx;
+            Vec2f bond_dir;
+        };
+        Array<_BondConnection> bond_connections; // SBV in Molfile format
+
+        Nullable<Vec3f> display_position;
+
+    private:
+        Superatom(const Superatom&);
+    };
+
+    class DLLEXPORT RepeatingUnit : public SGroup
+    {
+    public:
+        RepeatingUnit();
+        ~RepeatingUnit() override;
+
+        Nullable<int> connectivity;
+
+    private:
+        RepeatingUnit(const RepeatingUnit&);
+    };
+
+    class DLLEXPORT CopolymerGroup : public SGroup
+    {
+    public:
+        CopolymerGroup();
+        ~CopolymerGroup() override;
+
+        Nullable<int> connectivity;
+
+    private:
+        CopolymerGroup(const CopolymerGroup&);
+    };
+
+    class DLLEXPORT MultipleGroup : public SGroup
+    {
+    public:
+        MultipleGroup();
+        ~MultipleGroup() override;
+
+        Array<int> parent_atoms;
+        Nullable<int> multiplier;
+
+    private:
+        MultipleGroup(const MultipleGroup&);
+    };
+
+    struct SGroupInfo
+    {
+        SGroup& sgroup;
+        int new_index;
+        int new_parent_index;
+    };
+
+    class Tree;
+    class DLLEXPORT MoleculeSGroups
+    {
+    public:
+        MoleculeSGroups();
+        ~MoleculeSGroups();
+
+        DECL_ERROR;
+
+        int addSGroup(const char* sg_type);
+        int addSGroup(int sg_type);
+        SGroup& getSGroup(int idx);
+        SGroup& getSGroup(int idx, int sg_type);
+        int getSGroupCount();
+        int getSGroupCount(int sg_type);
+        bool isPolimer();
+        bool hasSGroup(int idx);
+
+        void buildTree(Tree& tree);
+        bool getParentAtoms(int idx, Array<int>& target);
+        bool getParentAtoms(SGroup& sgroup, Array<int>& target);
+        std::vector<SGroupInfo> getOrderedSGroups();
+
+        void remove(int idx);
+        void clear();
+        void clear(int sg_type);
+
+        int begin();
+        int end();
+        int next(int i);
+
+        enum PropertyTypes
+        {
+            PROPERTY_INT,
+            PROPERTY_BOOL,
+            PROPERTY_STRING,
+            PROPERTY_INT_ARRAY
+        };
+        static void parseCondition(const char* property, const char* value, int& s_property, int& s_type, int& s_int, Array<int>& s_indices);
+
+        void findSGroups(const char* property, const char* value, Array<int>& sgs);
+        void findSGroups(int property, int value, Array<int>& sgs);
+        void findSGroups(int property, const char* value, Array<int>& sgs);
+        void findSGroups(int property, Array<int>& value, Array<int>& sgs);
+
+        void registerUnfoldedHydrogen(int idx, int new_h_idx);
+        int findSGroupById(int id);
+
+    protected:
+        PtrPool<SGroup> _sgroups;
+
+    private:
+        bool _cmpIndices(Array<int>& t_inds, Array<int>& q_inds);
+    };
+
+} // namespace indigo
+
+#ifdef _WIN32
+#pragma warning(pop)
+#endif
+
+#endif

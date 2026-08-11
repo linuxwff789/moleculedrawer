@@ -11,7 +11,14 @@ enum class Element(val symbol: String, val valence: Int, val atomicNumber: Int) 
     Si("Si", 4, 14), Se("Se", 2, 34), As("As", 3, 33), Te("Te", 2, 52),
     Li("Li", 1, 3), Be("Be", 2, 4), Al("Al", 3, 13), Ti("Ti", 4, 22),
     Mn("Mn", 2, 25), Co("Co", 2, 27), Ni("Ni", 2, 28), Pd("Pd", 2, 46),
-    Pt("Pt", 2, 78), Au("Au", 3, 79), Ag("Ag", 1, 47);
+    Pt("Pt", 2, 78), Au("Au", 3, 79), Ag("Ag", 1, 47),
+    // 补充常用元素
+    He("He", 0, 2), Ne("Ne", 0, 10), Ar("Ar", 0, 18),
+    V("V", 5, 23), Cr("Cr", 3, 24), Ga("Ga", 3, 31),
+    Ge("Ge", 4, 32), Rb("Rb", 1, 37), Sr("Sr", 2, 38),
+    Mo("Mo", 6, 42), Cd("Cd", 2, 48), Sn("Sn", 4, 50),
+    Sb("Sb", 3, 51), Cs("Cs", 1, 55), W("W", 6, 74),
+    Hg("Hg", 2, 80), Tl("Tl", 3, 81), Pb("Pb", 4, 82), Bi("Bi", 3, 83), In("In", 3, 49);
     companion object { fun fromSymbol(s: String): Element = entries.find { it.symbol == s } ?: C }
 }
 

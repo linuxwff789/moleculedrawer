@@ -165,7 +165,22 @@ fun ColumnScope.MoleculeDrawToolbar(
                     }
                 }
             }
-            listOf(Element.C, Element.H, Element.O, Element.N, Element.S, Element.P, Element.F, Element.Cl, Element.Br, Element.I, Element.Na, Element.K, Element.Fe, Element.Cu, Element.Zn, Element.Mg).forEach { e ->
+            // 元素面板：按周期表分组，横向滚动查看全部
+            listOf(
+                // 有机常用（非金属）
+                Element.C, Element.H, Element.O, Element.N, Element.S, Element.P, Element.F, Element.Cl, Element.Br, Element.I,
+                Element.B, Element.Si, Element.Se, Element.As, Element.Te,
+                // 碱金属 / 碱土金属
+                Element.Li, Element.Na, Element.K, Element.Rb, Element.Cs,
+                Element.Be, Element.Mg, Element.Ca, Element.Sr, Element.Ba,
+                // 过渡金属
+                Element.Ti, Element.V, Element.Cr, Element.Mn, Element.Fe, Element.Co, Element.Ni, Element.Cu, Element.Zn,
+                Element.Mo, Element.W, Element.Pd, Element.Pt, Element.Ag, Element.Au, Element.Cd, Element.Hg,
+                // 主族金属
+                Element.Al, Element.Ga, Element.In, Element.Tl, Element.Sn, Element.Pb, Element.Sb, Element.Bi,
+                // 惰性气体
+                Element.He, Element.Ne, Element.Ar
+            ).forEach { e ->
                 FilterChip(selected = s.selElem == e, onClick = { s.selElem = e }, label = { Text(e.symbol, fontSize = 11.sp) }, modifier = Modifier.height(28.dp))
             }
         }

@@ -22,7 +22,7 @@ android {
     signingConfigs {
         // 固定 debug 签名：仓库内 keystore（密码为公开的 android/android），
         // 保证 CI 与本地构建产物签名一致，可直接覆盖安装
-        create("debug") {
+        getByName("debug") {
             storeFile = rootProject.file("keystore/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"

@@ -47,6 +47,9 @@ app/src/main/assets/ketcher/
 # 临时文件
 tmp/ketcher-src/
 
+# codegraph 索引（由 codegraph init 生成，提交后自动同步）
+.codegraph/
+
 # 构建设置/缓存
 .gradle/
 .gradle_build/

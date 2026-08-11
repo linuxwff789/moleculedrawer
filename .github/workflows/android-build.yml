@@ -35,6 +35,7 @@ jobs:
         run: ./gradlew :moleculedrawer:assembleDebug --no-daemon --stacktrace
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          USE_MIRRORS: "false"   # CI 在海外，禁用国内镜像仓库
 
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4

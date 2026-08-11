@@ -19,11 +19,23 @@ android {
         }
     }
 
+    signingConfigs {
+        // 固定 debug 签名：仓库内 keystore（密码为公开的 android/android），
+        // 保证 CI 与本地构建产物签名一致，可直接覆盖安装
+        create("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     ndkVersion = "27.0.12077973"
 
     buildTypes {
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
         release {
             isMinifyEnabled = true

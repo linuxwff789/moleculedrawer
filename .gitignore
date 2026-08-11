@@ -63,3 +63,4 @@ local.properties
 signing.properties
 output-metadata.json
 *.apk.idsig
+!keystore/debug.keystore

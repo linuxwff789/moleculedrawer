@@ -17,7 +17,7 @@ enum class Element(val symbol: String, val valence: Int, val atomicNumber: Int) 
     V("V", 5, 23), Cr("Cr", 3, 24), Ga("Ga", 3, 31),
     Ge("Ge", 4, 32), Rb("Rb", 1, 37), Sr("Sr", 2, 38),
     Mo("Mo", 6, 42), Cd("Cd", 2, 48), Sn("Sn", 4, 50),
-    Sb("Sb", 3, 51), Cs("Cs", 1, 55), W("W", 6, 74),
+    Sb("Sb", 3, 51), Cs("Cs", 1, 55), Ba("Ba", 2, 56), W("W", 6, 74),
     Hg("Hg", 2, 80), Tl("Tl", 3, 81), Pb("Pb", 4, 82), Bi("Bi", 3, 83), In("In", 3, 49);
     companion object { fun fromSymbol(s: String): Element = entries.find { it.symbol == s } ?: C }
 }

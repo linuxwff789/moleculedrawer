@@ -1082,7 +1082,7 @@ fun buildWorkspaceJson(
     sb.appendLine("  \"annotations\": [")
     for ((i, ann) in annotations.withIndex()) {
         sb.append("    {\"id\":${ann.id},\"type\":\"${ann.type.name}\",\"x\":${ann.x},\"y\":${ann.y}")
-        if (ann.text.isNotEmpty()) sb.append(",\"text\":\"${ann.text.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+        if (ann.text.isNotEmpty()) sb.append(",\"text\":\"${escapeJsonString(ann.text)}\"")
         if (ann.type == AnnotationType.ARROW || ann.endX != 0f || ann.endY != 0f) {
             sb.append(",\"endX\":${ann.endX},\"endY\":${ann.endY}")
         }
@@ -1364,10 +1364,11 @@ fun loadWorkspaceJson(
                         val x = extractJsonFloat(trimmed, "\"x\"")
                         val y = extractJsonFloat(trimmed, "\"y\"")
                         val elem = extractJsonString(trimmed, "\"element\"")?.let { runCatching { Element.valueOf(it) }.getOrNull() } ?: Element.C
-                        val aromatic = extractJsonString(trimmed, "\"aromatic\"")?.toBooleanStrictOrNull() ?: false
+                        // 注意：aromatic / isFunGroupConnector 写作无引号布尔，不能用 extractJsonString
+                        val aromatic = trimmed.contains("\"aromatic\":true")
                         val chiral = extractJsonString(trimmed, "\"chiral\"") ?: ""
                         val funGroupLabel = extractJsonString(trimmed, "\"funGroupLabel\"")?.takeIf { it.isNotEmpty() }
-                        val isFunGroupConnector = extractJsonString(trimmed, "\"isFunGroupConnector\"")?.toBooleanStrictOrNull() ?: false
+                        val isFunGroupConnector = trimmed.contains("\"isFunGroupConnector\":true")
                         tempAtoms.add(MoleculeAtom(id, x, y, elem, aromatic, chiral, funGroupLabel, isFunGroupConnector))
                     }
                 }
@@ -1442,16 +1443,50 @@ private fun extractJsonFloat(line: String, key: String): Float {
     return numStr.toFloatOrNull() ?: 0f
 }
 
-/** 从 JSON 行中提取 string 值 */
+/**
+ * 从 JSON 行中提取 string 值，并反转义 `\\` `\"` `\n` `\r` `\t`。
+ * 必须逐字符扫描跳过转义序列，否则字符串内部的 `\"` 会被当成结束引号导致截断。
+ */
 private fun extractJsonString(line: String, key: String): String? {
     val idx = line.indexOf(key)
     if (idx < 0) return null
     val after = line.substring(idx + key.length)
     val quoteStart = after.indexOf('"')
     if (quoteStart < 0) return null
-    val quoteEnd = after.indexOf('"', quoteStart + 1)
-    if (quoteEnd < 0) return null
-    return after.substring(quoteStart + 1, quoteEnd)
+    val sb = StringBuilder()
+    var i = quoteStart + 1
+    while (i < after.length) {
+        when (val c = after[i]) {
+            '"' -> return sb.toString()
+            '\\' -> {
+                if (i + 1 >= after.length) return null
+                when (val n = after[i + 1]) {
+                    'n' -> sb.append('\n')
+                    'r' -> sb.append('\r')
+                    't' -> sb.append('\t')
+                    else -> sb.append(n)
+                }
+                i += 2
+            }
+            else -> { sb.append(c); i++ }
+        }
+    }
+    return null
+}
+
+/** JSON 字符串转义（与 extractJsonString 对称：换行必须转义，否则会破坏按行解析的格式） */
+private fun escapeJsonString(s: String): String {
+    if (s.none { it == '\\' || it == '"' || it == '\n' || it == '\r' || it == '\t' }) return s
+    val sb = StringBuilder(s.length + 8)
+    for (c in s) when (c) {
+        '\\' -> sb.append("\\\\")
+        '"' -> sb.append("\\\"")
+        '\n' -> sb.append("\\n")
+        '\r' -> sb.append("\\r")
+        '\t' -> sb.append("\\t")
+        else -> sb.append(c)
+    }
+    return sb.toString()
 }
 /**
  * 清理残留的展开原子并标记官能团。

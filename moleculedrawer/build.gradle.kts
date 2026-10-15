@@ -12,8 +12,8 @@ android {
         applicationId = "com.moldraw.app"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.0.0"
         ndk {
             debugSymbolLevel = "none"
         }
@@ -23,6 +23,14 @@ android {
         // 固定 debug 签名：仓库内 keystore（密码为公开的 android/android），
         // 保证 CI 与本地构建产物签名一致，可直接覆盖安装
         getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+        // Release 沿用同一把仓库内固定 keystore（公开的 android/android），
+        // 保证 GitHub Release 产物可直接安装，且与 CI debug 产物同签名、可覆盖安装
+        create("repoRelease") {
             storeFile = rootProject.file("keystore/debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -40,6 +48,7 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("repoRelease")
         }
     }
 

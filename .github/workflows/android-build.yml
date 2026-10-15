@@ -37,6 +37,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools   # 默认的 'tools' 包已被 Google 下架，会导致 sdkmanager 失败
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -76,6 +78,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools   # 默认的 'tools' 包已被 Google 下架，会导致 sdkmanager 失败
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew

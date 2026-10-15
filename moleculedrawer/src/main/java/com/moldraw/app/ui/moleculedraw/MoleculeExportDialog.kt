@@ -196,31 +196,31 @@ fun MoleculeExportDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
                         shareSvgFile(context, svgStr)
-                    }, modifier = Modifier.weight(1f)) {
+                    }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)) {
                         Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("SVG", fontSize = 12.sp)
+                        Spacer(Modifier.width(2.dp))
+                        Text("SVG", fontSize = 12.sp, maxLines = 1)
                     }
                     OutlinedButton(onClick = {
                         shareBitmap(context, atoms, bonds, annotations, "molecule.png", android.graphics.Bitmap.CompressFormat.PNG, benzeneStyle)
-                    }, modifier = Modifier.weight(1f)) {
+                    }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)) {
                         Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("PNG", fontSize = 12.sp)
+                        Spacer(Modifier.width(2.dp))
+                        Text("PNG", fontSize = 12.sp, maxLines = 1)
                     }
                     OutlinedButton(onClick = {
                         shareBitmap(context, atoms, bonds, annotations, "molecule.jpg", android.graphics.Bitmap.CompressFormat.JPEG, benzeneStyle)
-                    }, modifier = Modifier.weight(1f)) {
+                    }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)) {
                         Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("JPG", fontSize = 12.sp)
+                        Spacer(Modifier.width(2.dp))
+                        Text("JPG", fontSize = 12.sp, maxLines = 1)
                     }
                     OutlinedButton(onClick = {
                         sharePdf(context, atoms, bonds, annotations, benzeneStyle)
-                    }, modifier = Modifier.weight(1f)) {
+                    }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)) {
                         Icon(Icons.Default.PictureAsPdf, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("PDF", fontSize = 12.sp)
+                        Spacer(Modifier.width(2.dp))
+                        Text("PDF", fontSize = 12.sp, maxLines = 1)
                     }
                 }
 
@@ -248,9 +248,9 @@ fun MoleculeExportDialog(
                             }
                         },
                         enabled = smiles.isNotBlank() && !querying,
-                        modifier = Modifier.height(30.dp)
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Text("查询", fontSize = 12.sp)
+                        Text("查询", fontSize = 12.sp, maxLines = 1)
                     }
                 }
                 if (querying) {
@@ -273,9 +273,20 @@ fun MoleculeExportDialog(
 
 @Composable
 private fun PropertyRow(label: String, value: String) {
-    Row(modifier = Modifier.padding(vertical = 2.dp)) {
-        Text("$label：", fontSize = 12.sp, color = Color(0xFF666666), modifier = Modifier.width(100.dp))
-        Text(value, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.Top) {
+        // 标签限宽并允许两行：PubChem 的属性名很长（如 PUBCHEM_IUPAC_OPENEYE_NAME），
+        // 原来写死 width(100.dp) + 默认 overflow=Clip 会被直接裁掉看不到
+        Text(
+            "$label：",
+            fontSize = 12.sp,
+            color = Color(0xFF666666),
+            modifier = Modifier.widthIn(min = 88.dp, max = 112.dp),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Spacer(Modifier.width(6.dp))
+        // 值占满剩余宽度并自动换行
+        Text(value, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
     }
 }
 

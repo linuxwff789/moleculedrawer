@@ -77,10 +77,17 @@ fun ColumnScope.MoleculeDrawToolbar(
                     FilterChip(
                         selected = s.tool == DrawTool.AUTO_FIT,
                         onClick = {
-                            s.tool = DrawTool.AUTO_FIT
                             if (s.selectedIds.size >= 2) {
-                                autoFit(s.atoms, s.bonds, s.selectedIds, layoutEngine, s.canvasSizePx.width, s.canvasSizePx.height, s.annotations)
+                                s.pushUndo()
+                                // autoFit 会用新 id 重建选中区域，必须用返回值覆写选区，
+                                // 否则旧 id 失效 → 调整后只有 id 碰巧重合的原子还显示为选中
+                                val newSel = autoFit(s.atoms, s.bonds, s.selectedIds, layoutEngine, s.canvasSizePx.width, s.canvasSizePx.height, s.annotations)
+                                s.selectedIds = newSel
+                                s.activeGroup = null
+                                if (newSel.isNotEmpty()) s.refreshGroup()   // 变换组里也存的是 atomIds，要重建
                                 s.tool = DrawTool.SELECT
+                            } else {
+                                s.tool = DrawTool.AUTO_FIT
                             }
                         },
                         label = { Text("自动调整", fontSize = 11.sp) },

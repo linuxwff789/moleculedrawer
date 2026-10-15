@@ -222,6 +222,8 @@ fun interface MoleculeLayoutEngine {
  *   6. 键长标准化 + 整体居中
  *
  * @param layoutEngine 可选的外部布局引擎（如 Indigo）。若提供则优先使用外部引擎进行布局。
+ * @return 操作后的选中集合。注意：Indigo 分支会删除旧原子并按新 id 重建选中区域，
+ *         旧 id 全部失效，调用方必须用返回值覆写 selectedIds（否则选区错位/丢失）。
  */
 fun autoFit(
     atoms: MutableList<MoleculeAtom>,
@@ -231,12 +233,12 @@ fun autoFit(
     canvasWidth: Float = 800f,
     canvasHeight: Float = 600f,
     annotations: MutableList<MoleculeAnnotation>? = null
-) {
+): Set<Int> {
     // ★ 日志 → logcat（Android 13+ 对 /sdcard/ 直接写入有限制）
     android.util.Log.d("MOLDRAW_DEBUG", "autoFit ENTERED atoms=${atoms.size} bonds=${bonds.size} sel=${selectedIds.size}")
     android.util.Log.d("MOLDRAW_DEBUG", "layoutEngine=${layoutEngine} selIds=${selectedIds}")
     android.util.Log.d("MOLDRAW_DEBUG", "atoms: ${atoms.joinToString(";") { "${it.id}(${it.x},${it.y})" }}")
-    if (selectedIds.size < 2) return
+    if (selectedIds.size < 2) return selectedIds
     val selSet = selectedIds
 
     // ── 1. 仅选区内构建邻接表 ──
@@ -506,7 +508,10 @@ fun autoFit(
                         atoms.clear(); atoms.addAll(snap)
                         android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] DONE - repositioned ${savedFuncGroups.size} groups, total atoms=${atoms.size}, bonds=${bonds.size}")
                         android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] final atoms: ${atoms.map { "${it.id}(${it.element.symbol})${if (it.funGroupLabel != null) "["+it.funGroupLabel+"]" else ""}@(${it.x.toInt()},${it.y.toInt()})" }}")
-                        return
+                        // 原子已被重建（新 id），选区必须跟着换；标注 id 不受影响，原样保留
+                        val newSel = newAtoms.map { it.id }.toSet() + selSet.filter { it < 0 }
+                        android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] selection remapped ${selSet.size} -> ${newSel.size} (atom ids reused, annotations kept)")
+                        return newSel
                     }
                 }
                 android.util.Log.w("MOLDRAW_DEBUG", "[autoFit] layoutAndClean failed")
@@ -531,7 +536,7 @@ fun autoFit(
                         val snap = atoms.toList()
                         atoms.clear(); atoms.addAll(snap)
                         android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] DONE via non-Indigo engine")
-                        return
+                        return selSet
                     }
                 }
             }
@@ -543,6 +548,8 @@ fun autoFit(
     } else {
         android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] layoutEngine is NULL!")
     }
+    // 引擎未生效：原子未被替换，选区原样返回
+    return selectedIds
 }
 
 // ── SMILES 导入逻辑（从统一对话框调用） ──

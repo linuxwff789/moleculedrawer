@@ -384,7 +384,7 @@ fun autoFit(
                 val smiles = layoutEngine.generateSmiles(selAtomsList, selBondsList, cleanAnn)
                 if (smiles == null || smiles.isEmpty()) {
                     android.util.Log.w("MOLDRAW_DEBUG", "[autoFit] generateSmiles returned null/empty, giving up")
-                    return
+                    return selSet
                 }
                 android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] Generated SMILES: '$smiles'")
 

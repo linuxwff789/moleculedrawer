@@ -39,6 +39,10 @@ app/src/main/assets/ketcher/
 *.jpeg
 *.pdf
 
+# 例外：App 图标资源（被上面的 *.png 规则误伤）
+!moleculedrawer/src/main/res/drawable/*.png
+!moleculedrawer/src/main/res/mipmap-*/*.png
+
 # IDE
 .idea/
 *.swp

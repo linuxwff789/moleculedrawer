@@ -172,17 +172,19 @@ fun MoleculeExportDialog(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
                         shareText(context, smiles.ifEmpty { molStr }, "分享 SMILES")
-                    }, modifier = Modifier.weight(1f)) {
+                    }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)) {
                         Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("分享 SMILES", fontSize = 12.sp)
+                        Spacer(Modifier.width(2.dp))
+                        // maxLines=1：不换行，两个按钮高度才能一致（SMILES 比 Molfile 宽，
+                        // 默认 padding 下它会被挤成两行 → 比 Molfile 高）
+                        Text("分享 SMILES", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     OutlinedButton(onClick = {
                         shareText(context, molStr, "分享 Molfile")
-                    }, modifier = Modifier.weight(1f)) {
+                    }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp)) {
                         Icon(Icons.Default.Share, null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("分享 Molfile", fontSize = 12.sp)
+                        Spacer(Modifier.width(2.dp))
+                        Text("分享 Molfile", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
 

@@ -1077,12 +1077,9 @@ bondOrderSum += when (b.type) {
                 }
             }
             val label = ann.text ?: ""
-            val display = if (ann.type == AnnotationType.FUNC_GROUP && grpMirror) label.reversed() else label
-            val connGlyph = when {
-                ann.type != AnnotationType.FUNC_GROUP -> ""
-                grpMirror -> display.takeLast(1)
-                else -> display.take(1)
-            }
+            val expTokens = functionalLabelTokens(label)
+            val display = if (ann.type == AnnotationType.FUNC_GROUP && grpMirror) expTokens.reversed().joinToString("") else label
+            val connGlyph = if (ann.type == AnnotationType.FUNC_GROUP) (expTokens.firstOrNull()?.take(1) ?: "") else ""
             val alignRight = ann.type == AnnotationType.FUNC_GROUP && (grpMirror || grpFlip)
             val labelScale = ann.scale.coerceAtLeast(0.5f) * (if (ann.type == AnnotationType.FUNC_GROUP) grpFontScale else 1f)
             val tp = android.graphics.Paint().apply {

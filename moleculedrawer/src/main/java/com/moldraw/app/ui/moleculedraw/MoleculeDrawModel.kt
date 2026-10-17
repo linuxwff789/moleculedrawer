@@ -572,7 +572,7 @@ class Selection(
         }
     }
 
-    /** 水平翻转（仅原子） */
+    /** 水平翻转（原子 + 标注同步） */
     fun flipHorizontal(): String {
         val ids = atomIds
         if (ids.size < 2) return "至少选中两个原子"
@@ -582,6 +582,7 @@ class Selection(
             val old = atoms[idx]
             atoms[idx] = old.copy(x = midX + (midX - old.x))
         }
+        syncAnnotationsAfterTransform(ids) { x, y -> (midX + (midX - x)) to y }
         var msg = ""
         for (i in bonds.indices) {
             val b = bonds[i]
@@ -596,7 +597,7 @@ class Selection(
         return if (msg.isNotEmpty()) "水平翻转：$msg" else "水平翻转完成"
     }
 
-    /** 垂直翻转（仅原子） */
+    /** 垂直翻转（原子 + 标注同步） */
     fun flipVertical(): String {
         val ids = atomIds
         if (ids.size < 2) return "至少选中两个原子"
@@ -606,6 +607,7 @@ class Selection(
             val old = atoms[idx]
             atoms[idx] = old.copy(y = midY + (midY - old.y))
         }
+        syncAnnotationsAfterTransform(ids) { x, y -> x to (midY + (midY - y)) }
         var msg = ""
         for (i in bonds.indices) {
             val b = bonds[i]
@@ -618,6 +620,57 @@ class Selection(
             }
         }
         return if (msg.isNotEmpty()) "垂直翻转：$msg" else "垂直翻转完成"
+    }
+
+    /**
+     * 顺时针旋转选中原子组 90°（以选区包围盒中心为轴），标注与官能团缩写同步。
+     * 楔形键无需改动：旋转不改变"朝上/朝下"的立体含义。
+     */
+    fun rotate90(): String {
+        val ids = atomIds
+        if (ids.size < 2) return "至少选中两个原子"
+        val xs = atoms.filter { it.id in ids }.map { it.x }
+        val ys = atoms.filter { it.id in ids }.map { it.y }
+        val cx = (xs.min() + xs.max()) / 2f
+        val cy = (ys.min() + ys.max()) / 2f
+        val rot = { x: Float, y: Float -> (cx - (y - cy)) to (cy + (x - cx)) }
+        for (aid in ids) {
+            val idx = atoms.indexOfFirst { it.id == aid }; if (idx < 0) continue
+            val old = atoms[idx]
+            val (nx, ny) = rot(old.x, old.y)
+            atoms[idx] = old.copy(x = nx, y = ny)
+        }
+        // 标注：选中的文字/箭头一起转；官能团缩写跟随连接点原子
+        for (i in annotations.indices) {
+            val ann = annotations[i]
+            if (ann.id in annotationIds) {
+                val (nx, ny) = rot(ann.x, ann.y)
+                val (nex, ney) = if (ann.type == AnnotationType.ARROW) rot(ann.endX, ann.endY) else (ann.endX to ann.endY)
+                annotations[i] = ann.copy(x = nx, y = ny, endX = nex, endY = ney)
+            } else if (ann.type == AnnotationType.FUNC_GROUP) {
+                val conn = atoms.find { it.id in ids && it.funGroupLabel == ann.text && it.isFunGroupConnector }
+                if (conn != null) annotations[i] = ann.copy(x = conn.x, y = conn.y)
+            }
+        }
+        return "已旋转 90°"
+    }
+
+    /** 变换后同步标注：选中的标注按 map 变换，官能团缩写贴回连接点原子 */
+    private fun syncAnnotationsAfterTransform(
+        ids: Set<Int>,
+        map: (Float, Float) -> Pair<Float, Float>
+    ) {
+        for (i in annotations.indices) {
+            val ann = annotations[i]
+            if (ann.id in annotationIds) {
+                val (nx, ny) = map(ann.x, ann.y)
+                val (ex, ey) = if (ann.type == AnnotationType.ARROW) map(ann.endX, ann.endY) else (ann.endX to ann.endY)
+                annotations[i] = ann.copy(x = nx, y = ny, endX = ex, endY = ey)
+            } else if (ann.type == AnnotationType.FUNC_GROUP) {
+                val conn = atoms.find { it.id in ids && it.funGroupLabel == ann.text && it.isFunGroupConnector }
+                if (conn != null) annotations[i] = ann.copy(x = conn.x, y = conn.y)
+            }
+        }
     }
 
     /** 框选：从屏幕矩形（未偏移）更新选中集合 */

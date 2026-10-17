@@ -122,7 +122,7 @@ fun DrawScope.drawCanvasContent(
         val t = labelTextOf(a) ?: continue
         if (a.funGroupLabel != null) {
             // 缩写文字是"首字母对齐在原子 + 向右展开"，所以键只需让开首字母
-            labelBoxes[a.id] = atomLabelHalfExtents(t.take(1), ANN_TEXT_SIZE)
+            labelBoxes[a.id] = atomLabelHalfExtents(t.take(1), ANN_TEXT_SIZE * fontScaleFor(a.id))
         } else {
             labelBoxes[a.id] = atomLabelHalfExtents(t, FONT_SIZE * fontScaleFor(a.id))
         }
@@ -182,11 +182,14 @@ fun DrawScope.drawCanvasContent(
                     atoms.find { it.funGroupLabel == ann.text && it.isFunGroupConnector }
                         ?.let { yf(it.y) } ?: yf(ann.y)
                 } else yf(ann.y)
-                // 官能团标注要朝"没有键的那一侧"展开，避免压住连接键
+                // 官能团缩写：连接字母锚定原子，整串朝远离基团的一侧展开；整体翻转后字序也反
                 var flipLeft = false
+                var mirrorText = false
+                var grpFontScale = 1f
                 if (ann.type == AnnotationType.FUNC_GROUP) {
                     val conn = atoms.find { it.funGroupLabel == ann.text && it.isFunGroupConnector }
                     if (conn != null) {
+                        grpFontScale = fontScaleFor(conn.id)
                         val ext = bonds.firstOrNull { b ->
                             (b.atom1 == conn.id || b.atom2 == conn.id) &&
                                 (atoms.find { it.id == (if (b.atom1 == conn.id) b.atom2 else b.atom1) }?.funGroupLabel != ann.text)
@@ -195,13 +198,21 @@ fun DrawScope.drawCanvasContent(
                             val other = atoms.find { it.id == (if (ext.atom1 == conn.id) ext.atom2 else ext.atom1) }
                             flipLeft = other != null && other.x > conn.x
                         }
+                        // 成员原子（O/N…）落在连接点左边 → 字序反过来，NO₂ 画成 ₂ON
+                        val members = atoms.filter { it.funGroupLabel == ann.text && !it.isFunGroupConnector }
+                        if (members.isNotEmpty()) {
+                            val meanX = members.map { it.x }.average().toFloat()
+                            if (meanX < conn.x) mirrorText = true
+                        }
                     }
                 }
                 drawAnnotationText(
                     ann.copy(x = drawX, y = drawY),
                     selected = annSelected,
                     anchorFirstGlyph = ann.type == AnnotationType.FUNC_GROUP,
-                    flipLeft = flipLeft
+                    flipLeft = flipLeft,
+                    mirrorText = mirrorText,
+                    fontScale = grpFontScale
                 )
             }
             AnnotationType.ARROW -> drawAnnotationArrow(

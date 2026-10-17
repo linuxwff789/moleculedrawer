@@ -884,7 +884,10 @@ fun shareBitmap(
             val sym = a.element.symbol
             if (h == 0) sym else if (h == 1) "${sym}H" else "${sym}H$h"
         }
-        if (t != null) expLabelBoxes[a.id] = atomLabelHalfExtents(t, if (a.funGroupLabel != null) ANN_TEXT_SIZE else FONT_SIZE * expGsf)
+        if (t != null) expLabelBoxes[a.id] = atomLabelHalfExtents(
+            if (a.funGroupLabel != null) t.take(1) else t,
+            if (a.funGroupLabel != null) ANN_TEXT_SIZE else FONT_SIZE * expGsf
+        )
     }
 
     for (b in bonds) {
@@ -1024,13 +1027,39 @@ bondOrderSum += when (b.type) {
     for (ann in annotations) {
         val cx = ann.x + offsetX; val cy = ann.y + offsetY
         if (ann.type == AnnotationType.TEXT || ann.type == AnnotationType.FUNC_GROUP) {
+            var grpFlip = false
+            if (ann.type == AnnotationType.FUNC_GROUP) {
+                val conn = atoms.find { it.funGroupLabel == ann.text && it.isFunGroupConnector }
+                if (conn != null) {
+                    val ext = bonds.firstOrNull { b ->
+                        (b.atom1 == conn.id || b.atom2 == conn.id) &&
+                            (atoms.find { it.id == (if (b.atom1 == conn.id) b.atom2 else b.atom1) }?.funGroupLabel != ann.text)
+                    }
+                    if (ext != null) {
+                        val other = atoms.find { it.id == (if (ext.atom1 == conn.id) ext.atom2 else ext.atom1) }
+                        grpFlip = other != null && other.x > conn.x
+                    }
+                }
+            }
             val tp = android.graphics.Paint().apply {
                 color = android.graphics.Color.parseColor("#333333")
                 textSize = FONT_SIZE * (ann.scale.coerceAtLeast(0.5f))
-                textAlign = android.graphics.Paint.Align.CENTER
+                textAlign = when {
+                    ann.type != AnnotationType.FUNC_GROUP -> android.graphics.Paint.Align.CENTER
+                    grpFlip -> android.graphics.Paint.Align.RIGHT
+                    else -> android.graphics.Paint.Align.LEFT
+                }
                 isAntiAlias = true
             }
-            canvas.drawText(ann.text ?: "", cx, cy + FONT_SIZE * 0.35f * (ann.scale.coerceAtLeast(0.5f)), tp)
+            val label = ann.text ?: ""
+            val w0 = tp.measureText(label.take(1))
+            val wAll = tp.measureText(label)
+            val tx = when {
+                ann.type != AnnotationType.FUNC_GROUP -> cx
+                grpFlip -> cx + wAll - w0 / 2f
+                else -> cx - w0 / 2f
+            }
+            canvas.drawText(ann.text ?: "", tx, cy + FONT_SIZE * 0.35f * (ann.scale.coerceAtLeast(0.5f)), tp)
         } else if (ann.type == AnnotationType.ARROW) {
             val ex = ann.endX + offsetX; val ey = ann.endY + offsetY
             val aPaint = android.graphics.Paint().apply {

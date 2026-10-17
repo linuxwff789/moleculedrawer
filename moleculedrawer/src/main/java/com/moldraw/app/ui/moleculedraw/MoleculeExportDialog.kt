@@ -499,9 +499,10 @@ fun sharePdf(
         }
     }
     // 绘制原子（矢量文字）
+    val gsf = bondLengthScale(atoms, bonds)
     val textPaint = android.graphics.Paint().apply {
         color = android.graphics.Color.parseColor("#333333")
-        textSize = FONT_SIZE
+        textSize = FONT_SIZE * gsf
         textAlign = android.graphics.Paint.Align.CENTER
         isAntiAlias = true
     }
@@ -519,7 +520,7 @@ fun sharePdf(
             var hCount = (a.element.valence - bondOrderSum).coerceAtLeast(0)
             // 芳香环修正：sp² C 在芳香环中有 π 键消耗 1 个价电子
             if (connected.count { it.type == BondType.AROMATIC } >= 2 && hCount > 0) hCount -= 1
-            canvas.drawText(if (hCount == 0) symbol else if (hCount == 1) "${symbol}H" else "${symbol}H$hCount", cx, cy + FONT_SIZE/3f, textPaint)
+            canvas.drawText(if (hCount == 0) symbol else if (hCount == 1) "${symbol}H" else "${symbol}H$hCount", cx, cy + FONT_SIZE * gsf / 3f, textPaint)
         }
     }
     // 绘制标注（矢量文字、箭头和官能团缩写）

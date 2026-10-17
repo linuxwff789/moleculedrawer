@@ -857,6 +857,18 @@ fun shareBitmap(
     val offsetX = -minX; val offsetY = -minY
 
     // 画键（跳过 AROMATIC，由后面统一处理）
+    // 标签框：键端按文字框缩进，导出图里也不穿模
+    val expGsf = bondLengthScale(atoms, bonds)
+    val expLabelBoxes = HashMap<Int, Pair<Float, Float>>()
+    for (a in atoms) {
+        val t: String? = if (a.funGroupLabel != null) a.funGroupLabel else if (a.element == Element.C) null else {
+            val h = calcImplicitH(a, bonds)
+            val sym = a.element.symbol
+            if (h == 0) sym else if (h == 1) "${sym}H" else "${sym}H$h"
+        }
+        if (t != null) expLabelBoxes[a.id] = atomLabelHalfExtents(t, if (a.funGroupLabel != null) ANN_TEXT_SIZE else FONT_SIZE * expGsf)
+    }
+
     for (b in bonds) {
         if (b.type == BondType.AROMATIC) continue
         val a1 = atoms.find { it.id == b.atom1 } ?: continue
@@ -865,8 +877,9 @@ fun shareBitmap(
         val len = sqrt(dx*dx + dy*dy)
         if (len < 1f) continue
         val ux = dx/len; val uy = dy/len
-        val r1 = if (a1.element == Element.C) CARBON_DOT_R else HETERO_CIRCLE_R
-        val r2 = if (a2.element == Element.C) CARBON_DOT_R else HETERO_CIRCLE_R
+        val eb1 = expLabelBoxes[a1.id]; val eb2 = expLabelBoxes[a2.id]
+        val r1 = eb1?.let { ellipseTrim(it.first, it.second, ux, uy) } ?: CARBON_DOT_R
+        val r2 = eb2?.let { ellipseTrim(it.first, it.second, -ux, -uy) } ?: CARBON_DOT_R
         val sx = a1.x + ux * r1 + offsetX; val sy = a1.y + uy * r1 + offsetY
         val ex = a2.x - ux * r2 + offsetX; val ey = a2.y - uy * r2 + offsetY
 

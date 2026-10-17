@@ -120,8 +120,12 @@ fun DrawScope.drawCanvasContent(
     val labelBoxes = HashMap<Int, Pair<Float, Float>>()
     for (a in atoms) {
         val t = labelTextOf(a) ?: continue
-        val fs = if (a.funGroupLabel != null) ANN_TEXT_SIZE else FONT_SIZE * fontScaleFor(a.id)
-        labelBoxes[a.id] = atomLabelHalfExtents(t, fs)
+        if (a.funGroupLabel != null) {
+            // 缩写文字是"首字母对齐在原子 + 向右展开"，所以键只需让开首字母
+            labelBoxes[a.id] = atomLabelHalfExtents(t.take(1), ANN_TEXT_SIZE)
+        } else {
+            labelBoxes[a.id] = atomLabelHalfExtents(t, FONT_SIZE * fontScaleFor(a.id))
+        }
     }
 
     for (b in bonds) {
@@ -178,7 +182,27 @@ fun DrawScope.drawCanvasContent(
                     atoms.find { it.funGroupLabel == ann.text && it.isFunGroupConnector }
                         ?.let { yf(it.y) } ?: yf(ann.y)
                 } else yf(ann.y)
-                drawAnnotationText(ann.copy(x = drawX, y = drawY), selected = annSelected)
+                // 官能团标注要朝"没有键的那一侧"展开，避免压住连接键
+                var flipLeft = false
+                if (ann.type == AnnotationType.FUNC_GROUP) {
+                    val conn = atoms.find { it.funGroupLabel == ann.text && it.isFunGroupConnector }
+                    if (conn != null) {
+                        val ext = bonds.firstOrNull { b ->
+                            (b.atom1 == conn.id || b.atom2 == conn.id) &&
+                                (atoms.find { it.id == (if (b.atom1 == conn.id) b.atom2 else b.atom1) }?.funGroupLabel != ann.text)
+                        }
+                        if (ext != null) {
+                            val other = atoms.find { it.id == (if (ext.atom1 == conn.id) ext.atom2 else ext.atom1) }
+                            flipLeft = other != null && other.x > conn.x
+                        }
+                    }
+                }
+                drawAnnotationText(
+                    ann.copy(x = drawX, y = drawY),
+                    selected = annSelected,
+                    anchorFirstGlyph = ann.type == AnnotationType.FUNC_GROUP,
+                    flipLeft = flipLeft
+                )
             }
             AnnotationType.ARROW -> drawAnnotationArrow(
                 ann.copy(x = xf(ann.x), y = yf(ann.y), endX = xf(ann.endX), endY = yf(ann.endY)),

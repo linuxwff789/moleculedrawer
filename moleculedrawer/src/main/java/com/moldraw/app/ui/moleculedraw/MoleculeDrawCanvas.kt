@@ -88,24 +88,7 @@ fun DrawScope.drawCanvasContent(
         val ry = lx * sinR + ly * cosR
         return yf(g.pivotY + ry + g.translationY)
     }
-    for (b in bonds) {
-        val a1 = atoms.find { it.id == b.atom1 } ?: continue
-        val a2 = atoms.find { it.id == b.atom2 } ?: continue
-        // 跳过官能团组内键（如 N=O 双键），缩写模式下不显示
-        // 两个原子属于同一官能团时才跳过（组内键）
-        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel) continue
-        // AROMATIC 键不在主循环画，由后面的统一芳香环渲染处理
-        if (b.type == BondType.AROMATIC) continue
-        drawBond(
-            MoleculeAtom(a1.id, transformX(a1), transformY(a1), a1.element),
-            MoleculeAtom(a2.id, transformX(a2), transformY(a2), a2.element),
-            b.type
-        )
-    }
-    // 跳过被 FUNC_GROUP 标注覆盖的原子（有 funGroupLabel 的都跳过，标注文字替代渲染）
-    val coveredAtomIds = atoms.filter { it.funGroupLabel != null }.map { it.id }.toSet()
-    if (coveredAtomIds.isNotEmpty()) android.util.Log.d("MOLDRAW_DEBUG", "[drawCanvas] coveredAtomIds=$coveredAtomIds (funGroupLabel)")
-    // 原子标签字号跟随键长：分子放大/缩小（捏合或缩放工具）时字母同步变大变小
+    // ── 字号与标签包围盒（先算，键的两端要按文字框缩进，避免放大后穿模）──
     val lenSum = HashMap<Int, Float>()
     val lenCnt = HashMap<Int, Int>()
     var gSum = 0f; var gCnt = 0
@@ -127,6 +110,39 @@ fun DrawScope.drawCanvasContent(
         val avg = if (sum != null && cnt != null && cnt > 0) sum / cnt else gAvg
         return (avg / BOND_LENGTH).coerceIn(0.3f, 4f)
     }
+    fun labelTextOf(a: MoleculeAtom): String? {
+        if (a.funGroupLabel != null) return a.funGroupLabel
+        if (a.element == Element.C) return null
+        val h = calcImplicitH(a, bonds)
+        val sym = a.element.symbol
+        return if (h == 0) sym else if (h == 1) "${sym}H" else "${sym}H$h"
+    }
+    val labelBoxes = HashMap<Int, Pair<Float, Float>>()
+    for (a in atoms) {
+        val t = labelTextOf(a) ?: continue
+        val fs = if (a.funGroupLabel != null) ANN_TEXT_SIZE else FONT_SIZE * fontScaleFor(a.id)
+        labelBoxes[a.id] = atomLabelHalfExtents(t, fs)
+    }
+
+    for (b in bonds) {
+        val a1 = atoms.find { it.id == b.atom1 } ?: continue
+        val a2 = atoms.find { it.id == b.atom2 } ?: continue
+        // 跳过官能团组内键（如 N=O 双键），缩写模式下不显示
+        // 两个原子属于同一官能团时才跳过（组内键）
+        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel) continue
+        // AROMATIC 键不在主循环画，由后面的统一芳香环渲染处理
+        if (b.type == BondType.AROMATIC) continue
+        drawBond(
+            MoleculeAtom(a1.id, transformX(a1), transformY(a1), a1.element),
+            MoleculeAtom(a2.id, transformX(a2), transformY(a2), a2.element),
+            b.type,
+            box1 = labelBoxes[a1.id],
+            box2 = labelBoxes[a2.id]
+        )
+    }
+    // 跳过被 FUNC_GROUP 标注覆盖的原子（有 funGroupLabel 的都跳过，标注文字替代渲染）
+    val coveredAtomIds = atoms.filter { it.funGroupLabel != null }.map { it.id }.toSet()
+    if (coveredAtomIds.isNotEmpty()) android.util.Log.d("MOLDRAW_DEBUG", "[drawCanvas] coveredAtomIds=$coveredAtomIds (funGroupLabel)")
     for (a in atoms) {
         if (a.id in coveredAtomIds) continue // 被 FUNC_GROUP 覆盖，跳过
         drawAtom(MoleculeAtom(a.id, transformX(a), transformY(a), a.element), bonds, annotations, fontScale = fontScaleFor(a.id))
@@ -397,6 +413,17 @@ fun DrawScope.drawCanvasContent(
     // ── 芳香环渲染（按 benzeneStyle） ──
     try {
         val rings = findPaulingRings(atoms, bonds)
+        // 环上若是杂原子（吡啶 N 等），同样按键端文字框缩进
+        fun ringBoxAt(px: Float, py: Float): Pair<Float, Float>? {
+            var best: MoleculeAtom? = null
+            var bestD = Float.MAX_VALUE
+            for (a in atoms) {
+                val dx = a.x - px; val dy = a.y - py
+                val d = dx * dx + dy * dy
+                if (d < bestD) { bestD = d; best = a }
+            }
+            return if (best != null && bestD < 36f) labelBoxes[best.id] else null
+        }
         if (benzeneStyle == BenzeneStyle.PAULING) {
             // 鲍林式：实线键 + 内切圆
             // 实线键由 findPaulingRings 识别的环绘制
@@ -409,7 +436,9 @@ fun DrawScope.drawCanvasContent(
                     val a2 = MoleculeAtom(0, p2.first, p2.second, Element.C)
                     drawBond(MoleculeAtom(0, xf(a1.x), yf(a1.y), Element.C),
                              MoleculeAtom(0, xf(a2.x), yf(a2.y), Element.C),
-                             BondType.SINGLE)
+                             BondType.SINGLE,
+                             box1 = ringBoxAt(p1.first, p1.second),
+                             box2 = ringBoxAt(p2.first, p2.second))
                 }
                 // 内切圆
                 val verts = ring.mapNotNull { (x, y) -> Offset(xf(x), yf(y)) }
@@ -424,10 +453,12 @@ fun DrawScope.drawCanvasContent(
                     val p1 = ring[i]; val p2 = ring[j]
                     val a1 = MoleculeAtom(0, xf(p1.first), yf(p1.second), Element.C)
                     val a2 = MoleculeAtom(0, xf(p2.first), yf(p2.second), Element.C)
+                    val bx1 = ringBoxAt(p1.first, p1.second)
+                    val bx2 = ringBoxAt(p2.first, p2.second)
                     if (i % 2 == 0) {
-                        drawBond(a1, a2, BondType.SINGLE)
+                        drawBond(a1, a2, BondType.SINGLE, box1 = bx1, box2 = bx2)
                     } else {
-                        drawBond(a1, a2, BondType.DOUBLE)
+                        drawBond(a1, a2, BondType.DOUBLE, box1 = bx1, box2 = bx2)
                     }
                 }
             }

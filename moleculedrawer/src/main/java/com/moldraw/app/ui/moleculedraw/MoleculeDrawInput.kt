@@ -15,7 +15,7 @@ class UndoManager(private val maxSize: Int = 30) {
     fun push(atoms: List<MoleculeAtom>, bonds: List<MoleculeBond>, annotations: List<MoleculeAnnotation>) {
         val a = atoms.joinToString("|") { "${it.id},${it.x},${it.y},${it.element.name},${it.aromatic},${it.chiral},${it.funGroupLabel ?: ""},${it.isFunGroupConnector}" }
         val b = bonds.joinToString("|") { "${it.id},${it.atom1},${it.atom2},${it.type.name}" }
-        val ann = annotations.joinToString("|") { "${it.id},${it.x},${it.y},${it.type.name},${it.endX},${it.endY},${it.scale},${it.text?.let { t -> t.replace("|", "/") } ?: ""}" }
+        val ann = annotations.joinToString("|") { "${it.id},${it.x},${it.y},${it.type.name},${it.endX},${it.endY},${it.scale},${it.role ?: ""},${it.text?.let { t -> t.replace("|", "/") } ?: ""}" }
         stack.add(Triple(a, b, ann))
         if (stack.size > maxSize) stack.removeAt(0)
         count = stack.size
@@ -40,7 +40,14 @@ class UndoManager(private val maxSize: Int = 30) {
         val bonds = if (bj.isEmpty()) emptyList()
             else bj.split("|").map { s -> val p = s.split(","); MoleculeBond(p[0].toInt(), p[1].toInt(), p[2].toInt(), BondType.valueOf(p[3])) }
         val annotations = if (annj.isEmpty()) emptyList()
-            else annj.split("|").map { s -> val p = s.split(",", limit = 8); MoleculeAnnotation(p[0].toInt(), AnnotationType.valueOf(p[3]), p[1].toFloat(), p[2].toFloat(), p.getOrNull(7)?.replace("/", "|") ?: "", p[4].toFloat(), p[5].toFloat(), p[6].toFloat()) }
+            else annj.split("|").map { s ->
+                val p = s.split(",", limit = 9)
+                MoleculeAnnotation(
+                    p[0].toInt(), AnnotationType.valueOf(p[3]), p[1].toFloat(), p[2].toFloat(),
+                    p.getOrNull(8)?.replace("/", "|") ?: "", p[4].toFloat(), p[5].toFloat(), p[6].toFloat(),
+                    role = p.getOrNull(7)?.takeIf { it.isNotEmpty() }
+                )
+            }
         return Triple(atoms, bonds, annotations)
     }
 }

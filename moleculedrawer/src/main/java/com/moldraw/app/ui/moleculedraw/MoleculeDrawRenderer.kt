@@ -91,10 +91,17 @@ fun DrawScope.drawBond(a1: MoleculeAtom, a2: MoleculeAtom, type: BondType, kekul
 }
 
 /** 绘制单个原子 */
-fun DrawScope.drawAtom(a: MoleculeAtom, bonds: List<MoleculeBond> = emptyList(), annotations: List<MoleculeAnnotation> = emptyList()) {
+fun DrawScope.drawAtom(
+    a: MoleculeAtom,
+    bonds: List<MoleculeBond> = emptyList(),
+    annotations: List<MoleculeAnnotation> = emptyList(),
+    fontScale: Float = 1f
+) {
     val c = Offset(a.x, a.y)
+    // 字号跟随键长（分子放大/缩小时同步变化）
+    val fsz = FONT_SIZE * fontScale
     val p = Paint().apply {
-        color = android.graphics.Color.BLACK; textSize = FONT_SIZE
+        color = android.graphics.Color.BLACK; textSize = fsz
         textAlign = Paint.Align.CENTER; isAntiAlias = true
     }
     // 如果该原子属于 FUNC_GROUP（有 funGroupLabel），跳过绘制（标注文字替代）
@@ -109,7 +116,7 @@ val hCount = calcImplicitH(a, bonds)
 val displayText = if (hCount == 0) symbol
 else if (hCount == 1) "${symbol}H"
 else "${symbol}H${hCount}"
-drawContext.canvas.nativeCanvas.drawText(displayText, c.x, c.y + FONT_SIZE/3f, p)
+drawContext.canvas.nativeCanvas.drawText(displayText, c.x, c.y + fsz/3f, p)
 }
 }
 

@@ -332,7 +332,9 @@ loadWorkspaceJson(text, s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle =
         dismissButton = { TextButton(onClick = { s.showExtendDialog = false }) { Text("取消") } }
     )
     // 导入对话框
-    if (s.showImportDialog) AlertDialog(
+    if (s.showImportDialog) {
+    android.util.Log.d("MOLDRAW_UI", "import dialog composing")
+    AlertDialog(
         onDismissRequest = { s.showImportDialog = false }, title = { Text("导入分子", fontWeight = FontWeight.Medium) },
         text = { Column { Text("输入 SMILES 或粘贴 Molfile（V2000/V3000）：", fontSize = 14.sp); Spacer(Modifier.height(8.dp))
             OutlinedTextField(value = s.importInput, onValueChange = { s.importInput = it }, label = { Text("SMILES / Molfile") }, singleLine = false, minLines = 4, maxLines = 12, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
@@ -340,6 +342,7 @@ loadWorkspaceJson(text, s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle =
         confirmButton = { TextButton(onClick = { if (s.importInput.isNotBlank()) { val c = s.importInput.trim(); val isMol = c.contains("V3000") || c.contains("V2000") || (c.lines().size >= 4 && c.lines()[3].trim().contains("V2000")); s.pushUndo(); if (isMol) processMolImport(c, layoutEngine, s.atoms, s.bonds, s.annotations, s.selectedIds.toMutableSet(), gNextId, s.canvasSizePx) else processSmilesImport(c, layoutEngine, s.atoms, s.bonds, s.annotations, s.selectedIds.toMutableSet(), gNextId, s.canvasSizePx) }; s.showImportDialog = false }) { Text("确定") } },
         dismissButton = { TextButton(onClick = { s.showImportDialog = false }) { Text("取消") } }
     )
+    }
     // 导出对话框
     // 导出对话框 — 只传选中的原子/键（若有选中），否则传全部
                 val exportAtoms = if (s.selectedIds.isNotEmpty()) s.atoms.filter { it.id in s.selectedIds } else s.atoms.toList()
@@ -426,7 +429,7 @@ if (s.showSaveDialog) {
                         DropdownMenuItem(
                             text = { Text("导入 SMILES / Molfile", fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(18.dp)) },
-                            onClick = { menuExpanded = false; s.showImportDialog = true; s.importInput = "" }
+                            onClick = { android.util.Log.d("MOLDRAW_UI", "menu import click"); menuExpanded = false; s.showImportDialog = true; s.importInput = "" }
                         )
                         DropdownMenuItem(
                             text = { Text("导出图片 / 文件", fontSize = 13.sp) },
@@ -939,7 +942,7 @@ tx = tx, ty = ty)
                             Text("从原子上拖拽可连键 · 选环工具可直接画环", fontSize = 11.sp, color = Color(0xFF90A4AE))
                             Spacer(Modifier.height(16.dp))
                             OutlinedButton(
-                                onClick = { s.showImportDialog = true; s.importInput = "" },
+                                onClick = { android.util.Log.d("MOLDRAW_UI", "empty-state import click"); s.showImportDialog = true; s.importInput = "" },
                                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp),
                                 modifier = Modifier.height(40.dp)
                             ) {
@@ -1007,7 +1010,10 @@ private fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Uni
             .width(52.dp)
             .height(48.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, onClick = {
+                android.util.Log.d("MOLDRAW_UI", "TopAction click: $label")
+                onClick()
+            }),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {

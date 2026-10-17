@@ -40,7 +40,7 @@ data class MoleculeAtom(
 )
 data class MoleculeBond(val id: Int, val atom1: Int, val atom2: Int, val type: BondType = BondType.SINGLE)
 
-data class MoleculeAnnotation(val id: Int, val type: AnnotationType, var x: Float, var y: Float, var text: String = "", var endX: Float = 0f, var endY: Float = 0f, var scale: Float = 1f, var subScript: Boolean = false)
+data class MoleculeAnnotation(val id: Int, val type: AnnotationType, var x: Float, var y: Float, var text: String = "", var endX: Float = 0f, var endY: Float = 0f, var scale: Float = 1f, var subScript: Boolean = false, var role: String? = null)
 enum class AnnotationType { TEXT, ARROW, FUNC_GROUP }
 
 /**

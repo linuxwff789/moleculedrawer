@@ -391,11 +391,14 @@ fun ColumnScope.MoleculeDrawToolbar(
                     ToolChip(selected = false, label = "取消选择", onClick = { s.selectedIds = emptySet(); s.collapseGroup(); s.activeGroup = null })
                 }
                 if (s.selectedIds.size >= 2) {
-                    ToolChip(selected = false, label = "水平翻转", onClick = { s.pushUndo(); s.flipToast = s.selection.flipHorizontal() }) {
+                    ToolChip(selected = false, label = "水平翻转", onClick = { s.pushUndo(); s.collapseGroup(); s.flipToast = s.selection.flipHorizontal() }) {
                         Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(14.dp))
                     }
-                    ToolChip(selected = false, label = "垂直翻转", onClick = { s.pushUndo(); s.flipToast = s.selection.flipVertical() }) {
+                    ToolChip(selected = false, label = "垂直翻转", onClick = { s.pushUndo(); s.collapseGroup(); s.flipToast = s.selection.flipVertical() }) {
                         Icon(Icons.Default.SwapVert, null, modifier = Modifier.size(14.dp))
+                    }
+                    ToolChip(selected = false, label = "旋转90°", onClick = { s.pushUndo(); s.collapseGroup(); s.flipToast = s.selection.rotate90() }) {
+                        Icon(Icons.Default.RotateRight, null, modifier = Modifier.size(14.dp))
                     }
                 }
                 if (s.selectedIds.size == 2) {

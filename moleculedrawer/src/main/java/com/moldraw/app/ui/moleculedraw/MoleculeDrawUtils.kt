@@ -16,6 +16,23 @@ fun resetId() { gNextId = 1 }
 
 fun snapAngle(deg: Float): Float = (Math.round(deg / 45f) * 45f).let { if (it < 0) it + 360f else it % 360f }
 
+
+/** 平均键长 / 标准键长：用于让原子标签字号跟随分子缩放（编辑器与导出共用） */
+fun bondLengthScale(atoms: List<MoleculeAtom>, bonds: List<MoleculeBond>): Float {
+    if (bonds.isEmpty()) return 1f
+    var sum = 0f; var n = 0
+    for (b in bonds) {
+        val a1 = atoms.find { it.id == b.atom1 } ?: continue
+        val a2 = atoms.find { it.id == b.atom2 } ?: continue
+        val dx = a2.x - a1.x; val dy = a2.y - a1.y
+        val len = sqrt(dx * dx + dy * dy)
+        if (len < 1f) continue
+        sum += len; n++
+    }
+    if (n == 0) return 1f
+    return (sum / n / BOND_LENGTH).coerceIn(0.3f, 4f)
+}
+
 /** 查找距离pos最近的原子（排除官能团组内原子），如果小于HIT_THRESHOLD则返回 */
 fun hitAtom(atoms: List<MoleculeAtom>, pos: Offset): MoleculeAtom? =
     atoms.filter { it.funGroupLabel == null } // 排除官能团组内原子（不可交互）
@@ -828,9 +845,10 @@ fun shareBitmap(
         style = android.graphics.Paint.Style.FILL
         isAntiAlias = true
     }
+    val gsf = bondLengthScale(atoms, bonds)
     val textPaint = android.graphics.Paint().apply {
         color = android.graphics.Color.parseColor("#333333")
-        textSize = FONT_SIZE
+        textSize = FONT_SIZE * gsf
         textAlign = android.graphics.Paint.Align.CENTER
         isAntiAlias = true
     }
@@ -967,7 +985,7 @@ bondOrderSum += when (b.type) {
             }
             val hCount = (a.element.valence - bondOrderSum).coerceAtLeast(0)
             val text = if (hCount == 0) symbol else if (hCount == 1) "${symbol}H" else "${symbol}H${hCount}"
-            canvas.drawText(text, cx, cy + FONT_SIZE/3f, textPaint)
+            canvas.drawText(text, cx, cy + FONT_SIZE * gsf / 3f, textPaint)
         }
     }
 

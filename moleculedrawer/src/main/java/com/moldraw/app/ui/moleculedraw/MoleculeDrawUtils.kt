@@ -387,8 +387,9 @@ fun autoFit(
                             val fg = FUNCTIONAL_GROUPS.firstOrNull { it.label == ann.text }
                             if (fg != null) {
                                 val connElem = Element.fromSymbol(fg.expandAtoms[fg.connectIndex].first)
+                                // 保留重复（NO₂ 的两个 O、COOH 的两个 O），用于拓扑匹配
                                 val memberElems = fg.expandAtoms.filterIndexed { i, _ -> i != fg.connectIndex }
-                                    .map { Element.fromSymbol(it.first) }.filter { it != Element.H }.toSet()
+                                    .map { Element.fromSymbol(it.first) }.filter { it != Element.H }
                                 android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] saving FUNC_GROUP ${ann.text} connElem=$connElem memberElems=$memberElems")
                                 Triple(ann, connElem, memberElems)
                             } else null
@@ -478,38 +479,55 @@ fun autoFit(
                             MoleculeBond(nextId(), b.atom1 + idOffset, b.atom2 + idOffset, b.type)
                         }
 
-                        // 重新标记官能团原子（从 V3000 解析后重新检测各组内原子）
+                        // 重新标记官能团原子：按"连接点元素 + 成员元素计数 + 只允许一个对外键"做拓扑匹配。
+                        // 旧实现用"非成员邻居数最多"挑连接点，羧基这类连接点也是 C 的基团会把标注贴到苯环碳上，
+                        // 结果就是缩写的组既被展开成原子、缩写又留在画面上（重叠）。
                         if (savedFuncGroups.isNotEmpty()) {
+                            val adj = HashMap<Int, MutableList<MoleculeBond>>()
+                            for (b in newBonds) {
+                                adj.getOrPut(b.atom1) { mutableListOf() }.add(b)
+                                adj.getOrPut(b.atom2) { mutableListOf() }.add(b)
+                            }
+                            val atomById = newAtoms.associateBy { it.id }
+                            val used = mutableSetOf<Int>()
                             for ((ann, connElem, memberElems) in savedFuncGroups) {
-                                // 找连接点原子：元素匹配，且尽量连接到非组内原子（如苯环 C）
-                                val connector = newAtoms.filter { it.element == connElem }
-                                    .maxByOrNull { a ->
-                                        newBonds.count { b ->
-                                            (b.atom1 == a.id || b.atom2 == a.id) &&
-                                            newAtoms.none {
-                                                it.id == (if (b.atom1 == a.id) b.atom2 else b.atom1) &&
-                                                it.element in memberElems
-                                            }
-                                        }
-                                    }
+                                val need = memberElems.groupingBy { it }.eachCount()
+                                var bestConnector: MoleculeAtom? = null
+                                var bestMembers: List<MoleculeAtom> = emptyList()
+                                var bestScore = Int.MAX_VALUE
+                                for (cand in newAtoms) {
+                                    if (cand.element != connElem || cand.id in used) continue
+                                    val nbBonds = adj[cand.id] ?: continue
+                                    val nbrAtoms = nbBonds.mapNotNull { nb ->
+                                        atomById[if (nb.atom1 == cand.id) nb.atom2 else nb.atom1]
+                                    }.filter { it.id !in used }
+                                    val pool = nbrAtoms.filter { it.element in memberElems }
+                                    val have = pool.groupingBy { it.element }.eachCount()
+                                    if (need.any { (e, c) -> (have[e] ?: 0) < c }) continue
+                                    val external = nbrAtoms.size - memberElems.size
+                                    if (external > 1) continue
+                                    val chosen = mutableListOf<MoleculeAtom>()
+                                    for ((e, c) in need) chosen.addAll(pool.filter { it.element == e }.take(c))
+                                    val score = external * 10 + nbrAtoms.size
+                                    if (score < bestScore) { bestScore = score; bestConnector = cand; bestMembers = chosen }
+                                }
+                                val connector = bestConnector
                                 if (connector != null) {
                                     connector.funGroupLabel = ann.text
                                     connector.isFunGroupConnector = true
-                                    // 找成员原子：元素匹配且连到连接点
-                                    for (memberAtom in newAtoms.filter { it.element in memberElems }) {
-                                        val isBonded = newBonds.any { b ->
-                                            (b.atom1 == memberAtom.id || b.atom2 == memberAtom.id) &&
-                                            (b.atom1 == connector.id || b.atom2 == connector.id)
-                                        }
-                                        if (isBonded) {
-                                            memberAtom.funGroupLabel = ann.text
-                                            memberAtom.isFunGroupConnector = false
-                                        }
+                                    used.add(connector.id)
+                                    for (m in bestMembers) {
+                                        m.funGroupLabel = ann.text
+                                        m.isFunGroupConnector = false
+                                        used.add(m.id)
                                     }
-                                    // 更新标注位置到连接点原子
                                     ann.x = connector.x
                                     ann.y = connector.y
-                                    android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] repositioned FUNC_GROUP ${ann.text} to connector ${connector.id} (${connector.x},${connector.y})")
+                                    android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] FUNC_GROUP ${ann.text} -> connector ${connector.id}, members=${bestMembers.map { it.id }}")
+                                } else {
+                                    // 拓扑上已找不到这个基团（被拆开/改结构）→ 去掉缩写，避免"展开了还压着缩写"
+                                    annotations?.remove(ann)
+                                    android.util.Log.w("MOLDRAW_DEBUG", "[autoFit] FUNC_GROUP ${ann.text} unmatched, annotation removed")
                                 }
                             }
                         }

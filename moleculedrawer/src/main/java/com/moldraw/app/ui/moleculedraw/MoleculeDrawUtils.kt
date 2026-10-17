@@ -1095,6 +1095,7 @@ fun buildWorkspaceJson(
         }
         if (abs(ann.scale - 1f) > 0.01f) sb.append(",\"scale\":${ann.scale}")
         if (ann.subScript) sb.append(",\"subScript\":true")
+        ann.role?.let { sb.append(",\"role\":\"${escapeJsonString(it)}\"") }
         sb.append(if (i < annotations.lastIndex) "}," else "}")
         sb.appendLine()
     }
@@ -1399,7 +1400,8 @@ fun loadWorkspaceJson(
                         val endY = extractJsonFloat(trimmed, "\"endY\"")
                         val scale = extractJsonFloat(trimmed, "\"scale\"")
                         val subScript = trimmed.contains("\"subScript\":true")
-                        tempAnnotations.add(MoleculeAnnotation(id, type, x, y, text, endX, endY, if (scale != 0f) scale else 1f, subScript))
+                        val role = extractJsonString(trimmed, "\"role\"")?.takeIf { it.isNotEmpty() }
+                        tempAnnotations.add(MoleculeAnnotation(id, type, x, y, text, endX, endY, if (scale != 0f) scale else 1f, subScript, role))
                     }
                 }
             }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -546,7 +547,7 @@ if (s.showSaveDialog) {
                 MoleculeDrawToolbar(state = s, layoutEngine = layoutEngine)
 
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    Canvas(Modifier.fillMaxSize().onSizeChanged { s.canvasSizePx = it.toSize(); s.canvasSize.value = Offset(it.width.toFloat(), it.height.toFloat()) }
+                    Canvas(Modifier.fillMaxSize().clipToBounds().onSizeChanged { s.canvasSizePx = it.toSize(); s.canvasSize.value = Offset(it.width.toFloat(), it.height.toFloat()) }
                         .pointerInput(Unit) { detectTransformGestures { _, pan, zoom, _ ->
                             if (zoom != 1f && s.atoms.isNotEmpty()) { if (!s.isPinchZooming) { s.pushUndo(); s.isPinchZooming = true }
                                 val hasSelection = s.selectedIds.isNotEmpty()

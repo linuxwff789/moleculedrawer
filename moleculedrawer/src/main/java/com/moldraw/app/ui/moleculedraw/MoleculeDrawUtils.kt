@@ -479,6 +479,34 @@ fun autoFit(
                             MoleculeBond(nextId(), b.atom1 + idOffset, b.atom2 + idOffset, b.type)
                         }
 
+                        // 保留用户原来的缩放：autoFit 会把键长归一化到 BOND_LENGTH，放大过的分子会被打回原尺寸
+                        fun avgBondLen(aList: List<MoleculeAtom>, bList: List<MoleculeBond>): Float {
+                            var sum = 0f; var n = 0
+                            for (b in bList) {
+                                val p1 = aList.find { it.id == b.atom1 } ?: continue
+                                val p2 = aList.find { it.id == b.atom2 } ?: continue
+                                val ddx = p2.x - p1.x; val ddy = p2.y - p1.y
+                                val l = sqrt(ddx * ddx + ddy * ddy)
+                                if (l < 1f) continue
+                                sum += l; n++
+                            }
+                            return if (n > 0) sum / n else 0f
+                        }
+                        val oldAvgLen = avgBondLen(selAtomsList, selBondsList)
+                        val newAvgLen = avgBondLen(newAtoms, newBonds)
+                        if (oldAvgLen > 1f && newAvgLen > 1f) {
+                            val k = (oldAvgLen / newAvgLen).coerceIn(0.2f, 5f)
+                            if (abs(k - 1f) > 0.01f) {
+                                val ccx = (newAtoms.minOf { it.x } + newAtoms.maxOf { it.x }) / 2f
+                                val ccy = (newAtoms.minOf { it.y } + newAtoms.maxOf { it.y }) / 2f
+                                for (a in newAtoms) {
+                                    a.x = ccx + (a.x - ccx) * k
+                                    a.y = ccy + (a.y - ccy) * k
+                                }
+                                android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] restore zoom k=$k (old=$oldAvgLen new=$newAvgLen)")
+                            }
+                        }
+
                         // 重新标记官能团原子：按"连接点元素 + 成员元素计数 + 只允许一个对外键"做拓扑匹配。
                         // 旧实现用"非成员邻居数最多"挑连接点，羧基这类连接点也是 C 的基团会把标注贴到苯环碳上，
                         // 结果就是缩写的组既被展开成原子、缩写又留在画面上（重叠）。
@@ -886,7 +914,7 @@ fun shareBitmap(
         }
         if (t != null) expLabelBoxes[a.id] = atomLabelHalfExtents(
             if (a.funGroupLabel != null) t.take(1) else t,
-            if (a.funGroupLabel != null) ANN_TEXT_SIZE else FONT_SIZE * expGsf
+            if (a.funGroupLabel != null) ANN_TEXT_SIZE * expGsf else FONT_SIZE * expGsf
         )
     }
 
@@ -1030,7 +1058,10 @@ bondOrderSum += when (b.type) {
         val cx = ann.x + offsetX; val cy = ann.y + offsetY
         if (ann.type == AnnotationType.TEXT || ann.type == AnnotationType.FUNC_GROUP) {
             var grpFlip = false
+            var grpMirror = false
+            var grpFontScale = 1f
             if (ann.type == AnnotationType.FUNC_GROUP) {
+                grpFontScale = expGsf
                 val conn = atoms.find { it.funGroupLabel == ann.text && it.isFunGroupConnector }
                 if (conn != null) {
                     val ext = bonds.firstOrNull { b ->
@@ -1041,27 +1072,35 @@ bondOrderSum += when (b.type) {
                         val other = atoms.find { it.id == (if (ext.atom1 == conn.id) ext.atom2 else ext.atom1) }
                         grpFlip = other != null && other.x > conn.x
                     }
+                    val members = atoms.filter { it.funGroupLabel == ann.text && !it.isFunGroupConnector }
+                    if (members.isNotEmpty()) grpMirror = members.map { it.x }.average().toFloat() < conn.x
                 }
             }
+            val label = ann.text ?: ""
+            val display = if (ann.type == AnnotationType.FUNC_GROUP && grpMirror) label.reversed() else label
+            val connGlyph = when {
+                ann.type != AnnotationType.FUNC_GROUP -> ""
+                grpMirror -> display.takeLast(1)
+                else -> display.take(1)
+            }
+            val alignRight = ann.type == AnnotationType.FUNC_GROUP && (grpMirror || grpFlip)
+            val labelScale = ann.scale.coerceAtLeast(0.5f) * (if (ann.type == AnnotationType.FUNC_GROUP) grpFontScale else 1f)
             val tp = android.graphics.Paint().apply {
                 color = android.graphics.Color.parseColor("#333333")
-                textSize = FONT_SIZE * (ann.scale.coerceAtLeast(0.5f))
+                textSize = FONT_SIZE * labelScale
                 textAlign = when {
                     ann.type != AnnotationType.FUNC_GROUP -> android.graphics.Paint.Align.CENTER
-                    grpFlip -> android.graphics.Paint.Align.RIGHT
+                    alignRight -> android.graphics.Paint.Align.RIGHT
                     else -> android.graphics.Paint.Align.LEFT
                 }
                 isAntiAlias = true
             }
-            val label = ann.text ?: ""
-            val w0 = tp.measureText(label.take(1))
-            val wAll = tp.measureText(label)
             val tx = when {
                 ann.type != AnnotationType.FUNC_GROUP -> cx
-                grpFlip -> cx + wAll - w0 / 2f
-                else -> cx - w0 / 2f
+                alignRight -> cx + tp.measureText(connGlyph) / 2f
+                else -> cx - tp.measureText(connGlyph) / 2f
             }
-            canvas.drawText(ann.text ?: "", tx, cy + FONT_SIZE * 0.35f * (ann.scale.coerceAtLeast(0.5f)), tp)
+            canvas.drawText(display, tx, cy + FONT_SIZE * 0.35f * labelScale, tp)
         } else if (ann.type == AnnotationType.ARROW) {
             val ex = ann.endX + offsetX; val ey = ann.endY + offsetY
             val aPaint = android.graphics.Paint().apply {

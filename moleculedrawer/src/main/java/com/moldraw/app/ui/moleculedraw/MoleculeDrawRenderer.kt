@@ -14,6 +14,24 @@ import kotlin.math.*
 // ═══════════════════════════════════════════════
 
 /** 绘制单个键 */
+/** 把缩写拆成"元素+紧跟的下标"词元，例如 NO₂ → [N, O₂] */
+fun functionalLabelTokens(text: String): List<String> {
+    val tokens = mutableListOf<String>()
+    var i = 0
+    while (i < text.length) {
+        val sb = StringBuilder()
+        sb.append(text[i]); i++
+        while (i < text.length && (text[i].isDigit() || text[i] in '\u2080'..'\u2089')) {
+            sb.append(text[i]); i++
+        }
+        tokens.add(sb.toString())
+    }
+    return tokens
+}
+
+/** 反序显示：NO₂ → O₂N、SO₃H → HO₃S（下标仍跟在各自元素后面） */
+fun reverseFunctionalLabel(text: String): String = functionalLabelTokens(text).reversed().joinToString("")
+
 /** 文字标签的包围盒（半宽, 半高），用于键端避让 */
 fun atomLabelHalfExtents(text: String, fontSize: Float): Pair<Float, Float> {
     val p = android.graphics.Paint().apply { isAntiAlias = true; textSize = fontSize }
@@ -157,11 +175,12 @@ fun DrawScope.drawAnnotationText(
     }
     // 官能团缩写：连接点那个字母要正好压在原子位置上，整串朝远离基团原子的一侧展开；
     // 分子被水平翻转后（成员原子跑到连接点左边）整串也跟着反序，NO₂ → ₂ON，保证 O 在 O 的那一侧
-    val display = if (anchorFirstGlyph && mirrorText) ann.text.reversed() else ann.text
+    val tokens = functionalLabelTokens(ann.text)
+    val display = if (anchorFirstGlyph && mirrorText) tokens.reversed().joinToString("") else ann.text
+    // 连接点元素 = 原标号第一个词元里的字母；反序后它落在整串末尾
     val connGlyph = when {
         !anchorFirstGlyph -> ""
-        mirrorText -> display.takeLast(1)
-        else -> display.take(1)
+        else -> tokens.firstOrNull()?.take(1) ?: ""
     }
     val alignRight = anchorFirstGlyph && (mirrorText || flipLeft)
     p.textAlign = when {

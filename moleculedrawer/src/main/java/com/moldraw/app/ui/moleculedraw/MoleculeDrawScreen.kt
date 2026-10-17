@@ -35,11 +35,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import kotlin.math.*
+import com.moldraw.app.indigo_native.IndigoNative
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -332,9 +336,7 @@ loadWorkspaceJson(text, s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle =
         dismissButton = { TextButton(onClick = { s.showExtendDialog = false }) { Text("取消") } }
     )
     // 导入对话框
-    if (s.showImportDialog) {
-    android.util.Log.d("MOLDRAW_UI", "import dialog composing")
-    AlertDialog(
+    if (s.showImportDialog) AlertDialog(
         onDismissRequest = { s.showImportDialog = false }, title = { Text("导入分子", fontWeight = FontWeight.Medium) },
         text = { Column { Text("输入 SMILES 或粘贴 Molfile（V2000/V3000）：", fontSize = 14.sp); Spacer(Modifier.height(8.dp))
             OutlinedTextField(value = s.importInput, onValueChange = { s.importInput = it }, label = { Text("SMILES / Molfile") }, singleLine = false, minLines = 4, maxLines = 12, modifier = Modifier.fillMaxWidth(), textStyle = TextStyle(fontSize = 13.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
@@ -342,7 +344,6 @@ loadWorkspaceJson(text, s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle =
         confirmButton = { TextButton(onClick = { if (s.importInput.isNotBlank()) { val c = s.importInput.trim(); val isMol = c.contains("V3000") || c.contains("V2000") || (c.lines().size >= 4 && c.lines()[3].trim().contains("V2000")); s.pushUndo(); if (isMol) processMolImport(c, layoutEngine, s.atoms, s.bonds, s.annotations, s.selectedIds.toMutableSet(), gNextId, s.canvasSizePx) else processSmilesImport(c, layoutEngine, s.atoms, s.bonds, s.annotations, s.selectedIds.toMutableSet(), gNextId, s.canvasSizePx) }; s.showImportDialog = false }) { Text("确定") } },
         dismissButton = { TextButton(onClick = { s.showImportDialog = false }) { Text("取消") } }
     )
-    }
     // 导出对话框
     // 导出对话框 — 只传选中的原子/键（若有选中），否则传全部
                 val exportAtoms = if (s.selectedIds.isNotEmpty()) s.atoms.filter { it.id in s.selectedIds } else s.atoms.toList()
@@ -383,6 +384,19 @@ if (s.showSaveDialog) {
         dismissButton = { TextButton(onClick = { s.showSaveDialog = false }) { Text("取消") } }
     )
 }
+
+    // ── 分子量标注：连通性变化时重算一次，拖动时只重排位置 ──
+    var mwLabels by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    val connKey = s.atoms.size * 1000003 +
+        s.atoms.map { it.id to it.element }.hashCode() * 31 +
+        s.bonds.map { Triple(it.atom1, it.atom2, it.type) }.hashCode()
+    LaunchedEffect(connKey, s.showMolecularWeight) {
+        if (!s.showMolecularWeight) {
+            mwLabels = emptyMap()
+        } else {
+            mwLabels = withContext(Dispatchers.Default) { computeMwLabels(s.atoms.toList(), s.bonds.toList(), layoutEngine) }
+        }
+    }
 
     // 顶栏只保留高频动作（撤销/导入/导出），保存/打开/清空收进 ⋮，避免图标挤压标题
     var menuExpanded by remember { mutableStateOf(false) }
@@ -429,12 +443,23 @@ if (s.showSaveDialog) {
                         DropdownMenuItem(
                             text = { Text("导入 SMILES / Molfile", fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(18.dp)) },
-                            onClick = { android.util.Log.d("MOLDRAW_UI", "menu import click"); menuExpanded = false; s.showImportDialog = true; s.importInput = "" }
+                            onClick = { menuExpanded = false; s.showImportDialog = true; s.importInput = "" }
                         )
                         DropdownMenuItem(
                             text = { Text("导出图片 / 文件", fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)) },
                             onClick = { menuExpanded = false; s.showExportDialog = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (s.showMolecularWeight) "隐藏分子量" else "显示分子量", fontSize = 13.sp) },
+                            leadingIcon = {
+                                Icon(
+                                    if (s.showMolecularWeight) Icons.Default.CheckCircle else Icons.Default.Functions,
+                                    null, modifier = Modifier.size(18.dp),
+                                    tint = if (s.showMolecularWeight) Color(0xFF1A73E8) else Color(0xFF444444)
+                                )
+                            },
+                            onClick = { menuExpanded = false; s.showMolecularWeight = !s.showMolecularWeight }
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
@@ -942,7 +967,7 @@ tx = tx, ty = ty)
                             Text("从原子上拖拽可连键 · 选环工具可直接画环", fontSize = 11.sp, color = Color(0xFF90A4AE))
                             Spacer(Modifier.height(16.dp))
                             OutlinedButton(
-                                onClick = { android.util.Log.d("MOLDRAW_UI", "empty-state import click"); s.showImportDialog = true; s.importInput = "" },
+                                onClick = { s.showImportDialog = true; s.importInput = "" },
                                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp),
                                 modifier = Modifier.height(40.dp)
                             ) {
@@ -950,6 +975,30 @@ tx = tx, ty = ty)
                                 Spacer(Modifier.width(6.dp))
                                 Text("导入 SMILES / Molfile", fontSize = 12.sp)
                             }
+                        }
+                    }
+                    // 分子量标注：画在 Canvas 之上、各分子包围盒下方
+                    if (s.showMolecularWeight && mwLabels.isNotEmpty()) {
+                        mwLabels.forEach { (key, label) ->
+                            val ids = key.split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
+                            var minX = Float.MAX_VALUE
+                            var maxY = -Float.MAX_VALUE
+                            for (a in s.atoms) if (a.id in ids) {
+                                if (a.x < minX) minX = a.x
+                                if (a.y > maxY) maxY = a.y
+                            }
+                            if (minX == Float.MAX_VALUE) return@forEach
+                            Text(
+                                label,
+                                fontSize = 11.sp,
+                                color = Color(0xFF37474F),
+                                modifier = Modifier.offset {
+                                    IntOffset(
+                                        (minX + s.canvasOffsetX).roundToInt(),
+                                        (maxY + s.canvasOffsetY + 24f).roundToInt()
+                                    )
+                                }
+                            )
                         }
                     }
                         MoleculeDrawMagnifier(magnifierPos = s.magnifierPos, state = s)
@@ -1010,10 +1059,7 @@ private fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Uni
             .width(52.dp)
             .height(48.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = enabled, onClick = {
-                android.util.Log.d("MOLDRAW_UI", "TopAction click: $label")
-                onClick()
-            }),
+            .clickable(enabled = enabled, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
@@ -1039,4 +1085,30 @@ private fun connectedAtomIds(atoms: List<MoleculeAtom>, bonds: List<MoleculeBond
         adj[cur]?.forEach { n -> if (seen.add(n)) stack.add(n) }
     }
     return seen
+}
+
+/** 逐分子（连通片段）计算分子式与分子量，key 为排序后的原子 id 串 */
+private fun computeMwLabels(
+    atoms: List<MoleculeAtom>,
+    bonds: List<MoleculeBond>,
+    layoutEngine: MoleculeLayoutEngine?
+): Map<String, String> {
+    val engine = layoutEngine as? IndigoNativeLayoutEngineAdapter ?: return emptyMap()
+    val out = LinkedHashMap<String, String>()
+    val visited = mutableSetOf<Int>()
+    for (a in atoms) {
+        if (a.funGroupLabel != null || !visited.add(a.id)) continue
+        val comp = connectedAtomIds(atoms, bonds, a.id)
+        visited.addAll(comp)
+        val compAtoms = atoms.filter { it.id in comp }
+        val compBonds = bonds.filter { it.atom1 in comp && it.atom2 in comp }
+        val smiles = runCatching { engine.generateSmiles(compAtoms, compBonds) }.getOrNull().orEmpty()
+        if (smiles.isBlank()) continue
+        val formula = runCatching { IndigoNative.grossFormula(smiles) }.getOrDefault("")
+        val mw = runCatching { IndigoNative.molecularWeight(smiles) }.getOrDefault(0.0)
+        if (mw <= 0.0) continue
+        val text = if (formula.isBlank()) "MW %.2f".format(mw) else "%s   MW %.2f".format(formula, mw)
+        out[comp.sorted().joinToString(",")] = text
+    }
+    return out
 }

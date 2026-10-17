@@ -146,35 +146,43 @@ fun DrawScope.drawAnnotationText(
     ann: MoleculeAnnotation,
     selected: Boolean = false,
     anchorFirstGlyph: Boolean = false,
-    flipLeft: Boolean = false
+    flipLeft: Boolean = false,
+    mirrorText: Boolean = false,
+    fontScale: Float = 1f
 ) {
     val p = android.graphics.Paint().apply {
         color = if (selected) android.graphics.Color.parseColor("#1976D2") else android.graphics.Color.parseColor("#333333")
-        textSize = ANN_TEXT_SIZE * ann.scale
-        // 官能团缩写：第一个字母（连接点元素）的中心落在原子上，整体向键的反方向展开
-        textAlign = when {
-            !anchorFirstGlyph -> Paint.Align.CENTER
-            flipLeft -> Paint.Align.RIGHT
-            else -> Paint.Align.LEFT
-        }
+        textSize = ANN_TEXT_SIZE * ann.scale * fontScale
         isAntiAlias = true
+    }
+    // 官能团缩写：连接点那个字母要正好压在原子位置上，整串朝远离基团原子的一侧展开；
+    // 分子被水平翻转后（成员原子跑到连接点左边）整串也跟着反序，NO₂ → ₂ON，保证 O 在 O 的那一侧
+    val display = if (anchorFirstGlyph && mirrorText) ann.text.reversed() else ann.text
+    val connGlyph = when {
+        !anchorFirstGlyph -> ""
+        mirrorText -> display.takeLast(1)
+        else -> display.take(1)
+    }
+    val alignRight = anchorFirstGlyph && (mirrorText || flipLeft)
+    p.textAlign = when {
+        !anchorFirstGlyph -> Paint.Align.CENTER
+        alignRight -> Paint.Align.RIGHT
+        else -> Paint.Align.LEFT
     }
     val fm = p.fontMetrics
     val textCenterY = ann.y - (fm.ascent + fm.descent) / 2f
-    val w0 = p.measureText(ann.text.take(1))
-    val wAll = p.measureText(ann.text)
-    // LEFT: 起点让首字母居中于原子；RIGHT: 终点回退到"首字母居中"的位置
+    val wConn = if (connGlyph.isEmpty()) 0f else p.measureText(connGlyph)
     val textStartX = when {
         !anchorFirstGlyph -> ann.x
-        flipLeft -> ann.x + wAll - w0 / 2f
-        else -> ann.x - w0 / 2f
+        alignRight -> ann.x + wConn / 2f
+        else -> ann.x - wConn / 2f
     }
-    if (ann.subScript && ann.text.any { it.isDigit() }) {
+    if (ann.subScript && display.any { it.isDigit() }) {
         // 自动下标模式：字母正常大小，数字缩小并下沉
         val parts = mutableListOf<Pair<String, Boolean>>() // text, isSub
         val current = StringBuilder()
         var inDigit = false
-        for (c in ann.text) {
+        for (c in display) {
             if (c.isDigit()) {
                 if (!inDigit && current.isNotEmpty()) { parts.add(Pair(current.toString(), false)); current.clear() }
                 inDigit = true; current.append(c)
@@ -185,7 +193,7 @@ fun DrawScope.drawAnnotationText(
         }
         if (current.isNotEmpty()) parts.add(Pair(current.toString(), inDigit))
         var xPos = textStartX
-        val normalSize = ANN_TEXT_SIZE * ann.scale
+        val normalSize = ANN_TEXT_SIZE * ann.scale * fontScale
         val subSize = normalSize * 0.65f
         val subOffset = normalSize * 0.35f // 下沉量
         for ((text, isSub) in parts) {
@@ -196,7 +204,7 @@ fun DrawScope.drawAnnotationText(
             xPos += p.measureText(text)
         }
     } else {
-        drawContext.canvas.nativeCanvas.drawText(ann.text, textStartX, textCenterY, p)
+        drawContext.canvas.nativeCanvas.drawText(display, textStartX, textCenterY, p)
     }
 }
 

@@ -105,9 +105,31 @@ fun DrawScope.drawCanvasContent(
     // 跳过被 FUNC_GROUP 标注覆盖的原子（有 funGroupLabel 的都跳过，标注文字替代渲染）
     val coveredAtomIds = atoms.filter { it.funGroupLabel != null }.map { it.id }.toSet()
     if (coveredAtomIds.isNotEmpty()) android.util.Log.d("MOLDRAW_DEBUG", "[drawCanvas] coveredAtomIds=$coveredAtomIds (funGroupLabel)")
+    // 原子标签字号跟随键长：分子放大/缩小（捏合或缩放工具）时字母同步变大变小
+    val lenSum = HashMap<Int, Float>()
+    val lenCnt = HashMap<Int, Int>()
+    var gSum = 0f; var gCnt = 0
+    for (b in bonds) {
+        val p1 = atoms.find { it.id == b.atom1 } ?: continue
+        val p2 = atoms.find { it.id == b.atom2 } ?: continue
+        val dx = p2.x - p1.x; val dy = p2.y - p1.y
+        val len = sqrt(dx * dx + dy * dy)
+        if (len < 1f) continue
+        lenSum[b.atom1] = (lenSum[b.atom1] ?: 0f) + len
+        lenSum[b.atom2] = (lenSum[b.atom2] ?: 0f) + len
+        lenCnt[b.atom1] = (lenCnt[b.atom1] ?: 0) + 1
+        lenCnt[b.atom2] = (lenCnt[b.atom2] ?: 0) + 1
+        gSum += len; gCnt++
+    }
+    val gAvg = if (gCnt > 0) gSum / gCnt else BOND_LENGTH
+    fun fontScaleFor(id: Int): Float {
+        val sum = lenSum[id]; val cnt = lenCnt[id]
+        val avg = if (sum != null && cnt != null && cnt > 0) sum / cnt else gAvg
+        return (avg / BOND_LENGTH).coerceIn(0.3f, 4f)
+    }
     for (a in atoms) {
         if (a.id in coveredAtomIds) continue // 被 FUNC_GROUP 覆盖，跳过
-        drawAtom(MoleculeAtom(a.id, transformX(a), transformY(a), a.element), bonds, annotations)
+        drawAtom(MoleculeAtom(a.id, transformX(a), transformY(a), a.element), bonds, annotations, fontScale = fontScaleFor(a.id))
     }
 
     // ── 选中高亮（多选时蓝色外圈）──

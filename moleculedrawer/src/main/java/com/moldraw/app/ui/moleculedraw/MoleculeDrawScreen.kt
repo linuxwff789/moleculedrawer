@@ -378,43 +378,74 @@ if (s.showSaveDialog) {
     )
 }
 
-Scaffold(topBar = {
-        TopAppBar(title = { Text("分子结构绘制器", fontSize = 16.sp) }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF5F5F5)), actions = {
-            IconButton(onClick = { s.tool = DrawTool.PAN; s.bondStart = null; s.isBondDragging = false; s.selectedAtom = null; s.magnifierPos = null; s.bondFirstAtom = null; s.selRectStart = null; s.isSelDragging = false }) { Icon(Icons.Default.PanTool, "平移", tint = if (s.tool == DrawTool.PAN) Color(0xFF1976D2) else Color(0xFF555555)) }
-            IconButton(onClick = { s.doUndo() }, enabled = s.undoCount > 0) { Icon(Icons.Default.Undo, "撤销", tint = if (s.undoCount > 0) Color(0xFF333333) else Color(0xFFCCCCCC)) }
-            if (s.atoms.isNotEmpty()) IconButton(onClick = { s.pushUndo(); s.atoms.clear(); s.bonds.clear(); s.annotations.clear(); s.selectedIds = emptySet() }) { Icon(Icons.Default.DeleteSweep, "清除", tint = Color(0xFF555555)) }
-            IconButton(onClick = { s.showImportDialog = true; s.importInput = "" }) { Icon(Icons.Default.FileOpen, "导入 SMILES / Mol", tint = Color(0xFF555555)) }
-            IconButton(onClick = { s.showExportDialog = true }) { Icon(Icons.Default.Share, "导出", tint = Color(0xFF555555)) }
-            // 保存项目（.moldraw 格式，可再次编辑）
-            IconButton(onClick = {
-                android.util.Log.d("MOLDRAW_DEBUG", "=== SAVE CLICKED ===")
-                android.util.Log.d("MOLDRAW_DEBUG", "atoms=${s.atoms.size} bonds=${s.bonds.size} annotations=${s.annotations.size}")
-                var json = ""
-                try {
-                json = buildWorkspaceJson(s.atoms.toList(), s.bonds.toList(), s.annotations.toList(), BOND_LENGTH, s.benzeneStyle, layoutEngine)
-                s.pendingSaveJson = json
-                android.util.Log.d("MOLDRAW_DEBUG", "buildWorkspaceJson OK, json len=${json.length}")
-                } catch (e: Exception) {
-                    android.util.Log.e("MOLDRAW_DEBUG", "buildWorkspaceJson threw at save site: ${e::class.simpleName}: ${e.message}")
-                    android.util.Log.e("MOLDRAW_DEBUG", "stack: ${e.stackTraceToString().take(500)}")
+    // 顶栏只保留高频动作（撤销/导入/导出），保存/打开/清空收进 ⋮，避免图标挤压标题
+    var menuExpanded by remember { mutableStateOf(false) }
+    val onSaveProject: () -> Unit = {
+        var json = ""
+        try {
+            json = buildWorkspaceJson(s.atoms.toList(), s.bonds.toList(), s.annotations.toList(), BOND_LENGTH, s.benzeneStyle, layoutEngine)
+            s.pendingSaveJson = json
+        } catch (e: Exception) {
+            android.util.Log.e("MOLDRAW_DEBUG", "buildWorkspaceJson threw at save site: ${e::class.simpleName}: ${e.message}")
+        }
+        if (currentFileUri.isNotEmpty()) {
+            try {
+                val uri = Uri.parse(currentFileUri)
+                context.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { w -> if (json.isNotEmpty()) w.write(json) }
+                android.widget.Toast.makeText(context, "已保存", android.widget.Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "保存失败: ${e.localizedMessage ?: "未知错误"}", android.widget.Toast.LENGTH_LONG).show()
+            }
+        } else {
+            s.showSaveDialog = true
+        }
+    }
+
+    Scaffold(topBar = {
+        TopAppBar(
+            title = { Text("分子结构绘制器", fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1) },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF7F7F8)),
+            actions = {
+                IconButton(onClick = { s.doUndo() }, enabled = s.undoCount > 0) {
+                    Icon(Icons.Default.Undo, "撤销", tint = if (s.undoCount > 0) Color(0xFF333333) else Color(0xFFCCCCCC))
                 }
-                if (currentFileUri.isNotEmpty()) {
-                    // 有已有文件 URI → 直接通过 ContentResolver 覆盖保存
-                    try {
-                        val uri = Uri.parse(currentFileUri)
-                        context.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { w -> if (json.isNotEmpty()) w.write(json) }
-                        android.widget.Toast.makeText(context, "已保存", android.widget.Toast.LENGTH_SHORT).show()
-                    } catch (e: Exception) {
-                        android.widget.Toast.makeText(context, "保存失败: ${e.localizedMessage ?: "未知错误"}", android.widget.Toast.LENGTH_LONG).show()
+                IconButton(onClick = { s.showImportDialog = true; s.importInput = "" }) {
+                    Icon(Icons.Default.FileOpen, "导入 SMILES / Mol", tint = Color(0xFF444444))
+                }
+                IconButton(onClick = { s.showExportDialog = true }) {
+                    Icon(Icons.Default.Share, "导出", tint = Color(0xFF444444))
+                }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, "更多", tint = Color(0xFF444444))
                     }
-                } else {
-                    // 无已有文件 → 弹对话框输入文件名，再通过 SAF CreateDocument 选位置
-                    s.showSaveDialog = true
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("保存项目", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; onSaveProject() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("打开项目", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; openFileLauncher.launch(arrayOf("application/octet-stream", "*/*")) }
+                        )
+                        if (s.atoms.isNotEmpty() || s.annotations.isNotEmpty()) {
+                            HorizontalDivider()
+                            DropdownMenuItem(
+                                text = { Text("清空画布", fontSize = 13.sp, color = Color(0xFFD32F2F)) },
+                                leadingIcon = { Icon(Icons.Default.DeleteSweep, null, modifier = Modifier.size(18.dp), tint = Color(0xFFD32F2F)) },
+                                onClick = {
+                                    menuExpanded = false
+                                    s.pushUndo()
+                                    s.atoms.clear(); s.bonds.clear(); s.annotations.clear(); s.selectedIds = emptySet()
+                                }
+                            )
+                        }
+                    }
                 }
-            }) { Icon(Icons.Default.Save, "保存项目", tint = Color(0xFF555555)) }
-            // 打开项目（.moldraw 文件）
-            IconButton(onClick = { openFileLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) { Icon(Icons.Default.FolderOpen, "打开项目", tint = Color(0xFF555555)) }
-        })
+            }
+        )
     }) { pad ->
         Box(Modifier.fillMaxSize().padding(pad).background(Color(0xFFFAFAFA))) {
             Column(Modifier.fillMaxSize()) {
@@ -855,19 +886,45 @@ tx = tx, ty = ty)
                         MoleculeDrawMagnifier(magnifierPos = s.magnifierPos, state = s)
                 }
 
-                // 底部 SMILES 栏
-                if (s.selectedIds.isNotEmpty()) {
-                    val selectedAtoms = s.atoms.filter { it.id in s.selectedIds }
-                    if (selectedAtoms.isNotEmpty()) {
-                        val set = selectedAtoms.map { it.id }.toSet()
-                        val selectedBonds = s.bonds.filter { it.atom1 in set && it.atom2 in set }
-                        val smiles = if (layoutEngine is IndigoNativeLayoutEngineAdapter) (layoutEngine).generateSmiles(selectedAtoms, selectedBonds, s.annotations) ?: "" else ""
-                        Surface(Modifier.fillMaxWidth(), color = Color(0xFFEEEEEE), shadowElevation = 2.dp) {
-                            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(text = if (smiles.isEmpty()) "(选中 ${s.selectedIds.size} 个原子)" else smiles, fontSize = 12.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = Color(0xFF333333), modifier = Modifier.weight(1f))
-                                Spacer(Modifier.width(8.dp))
-                                IconButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("smiles", smiles)) }, modifier = Modifier.size(28.dp)) { Icon(Icons.Default.ContentCopy, "复制", tint = Color(0xFF555555), modifier = Modifier.size(16.dp)) }
+                // 底部状态栏：常驻当前工具提示（原来每种工具各占一整行说明），有选区时同时给出 SMILES
+                val selAtoms = s.atoms.filter { it.id in s.selectedIds }
+                val selSet = selAtoms.map { it.id }.toSet()
+                val selBonds = s.bonds.filter { it.atom1 in selSet && it.atom2 in selSet }
+                val selSmiles = if (selAtoms.isNotEmpty() && layoutEngine is IndigoNativeLayoutEngineAdapter)
+                    layoutEngine.generateSmiles(selAtoms, selBonds, s.annotations) ?: "" else ""
+                Surface(Modifier.fillMaxWidth(), color = Color(0xFFF7F7F8), shadowElevation = 3.dp) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)) {
+                        if (selAtoms.isNotEmpty()) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = if (selSmiles.isEmpty()) "(选中 ${s.selectedIds.size} 个原子)" else selSmiles,
+                                    fontSize = 11.sp,
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                    color = Color(0xFF37474F),
+                                    maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(
+                                    onClick = {
+                                        (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                            .setPrimaryClip(ClipData.newPlainText("smiles", selSmiles))
+                                        android.widget.Toast.makeText(context, "SMILES 已复制", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(30.dp)
+                                ) { Icon(Icons.Default.ContentCopy, "复制 SMILES", tint = Color(0xFF546E7A), modifier = Modifier.size(15.dp)) }
                             }
+                        }
+                        Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                toolHint(s.tool),
+                                fontSize = 10.sp,
+                                color = Color(0xFF607D8B),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (selAtoms.isNotEmpty()) Text("${s.selectedIds.size} 个原子", fontSize = 10.sp, color = Color(0xFF2E7D32))
                         }
                     }
                 }

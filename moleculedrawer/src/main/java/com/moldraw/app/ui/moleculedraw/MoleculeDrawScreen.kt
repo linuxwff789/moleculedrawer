@@ -620,7 +620,17 @@ if (s.showSaveDialog) {
                                                     connectedAtomIds(s.atoms, s.bonds, b.atom1) + connectedAtomIds(s.atoms, s.bonds, b.atom2)
                                                 }
                                             }
-                                            s.selectedIds = if (picked == null || picked == s.selectedIds) emptySet() else picked
+                                            val pickedIds: Set<Int>? = if (picked == null) null else {
+                                                // 把该分子上的官能团缩写一起选中，拖动时缩写跟着走
+                                                val groupAnns = s.annotations.filter { ann ->
+                                                    ann.type == AnnotationType.FUNC_GROUP && s.atoms.any { a ->
+                                                        a.id in picked && a.funGroupLabel == ann.text && a.isFunGroupConnector
+                                                    }
+                                                }.map { -it.id }
+                                                picked + groupAnns
+                                            }
+                                            s.selectedIds = if (pickedIds == null || pickedIds == s.selectedIds) emptySet() else pickedIds
+                                            if (s.selectedIds.isNotEmpty()) s.isMoveMode = true
                                         }
                                         s.activeGroup = null
                                         if (s.selectedIds.isNotEmpty()) s.refreshGroup() else s.collapseGroup()
@@ -642,11 +652,20 @@ if (s.showSaveDialog) {
                                     s.selTapStart = wp
                                     
                                     if (s.isMoveMode && s.selectedIds.isNotEmpty()) {
-                                        // 移动模式：直接拖拽移动选中元素
-                                        s.activeHandle = -1
-                                        s.isMovingSelection = true; s.moveStartOffset = wp; s.pushUndo()
-                                        s.updateAlignGuides() // 显示辅助线
-                                        return@detectDragGestures
+                                        // 只有按在选区（包围盒）里才移动；按在空白处继续走框选
+                                        val selPts = s.atoms.filter { it.id in s.selectedIds }
+                                        val inSel = if (selPts.isNotEmpty()) {
+                                            val pad = BOND_LENGTH * 0.4f
+                                            val minX = selPts.minOf { it.x } - pad; val maxX = selPts.maxOf { it.x } + pad
+                                            val minY = selPts.minOf { it.y } - pad; val maxY = selPts.maxOf { it.y } + pad
+                                            wp.x in minX..maxX && wp.y in minY..maxY
+                                        } else false
+                                        if (inSel) {
+                                            s.activeHandle = -1
+                                            s.isMovingSelection = true; s.moveStartOffset = wp; s.pushUndo()
+                                            s.updateAlignGuides() // 显示辅助线
+                                            return@detectDragGestures
+                                        }
                                     }
                                     
                                     // 先检测是否在手柄上

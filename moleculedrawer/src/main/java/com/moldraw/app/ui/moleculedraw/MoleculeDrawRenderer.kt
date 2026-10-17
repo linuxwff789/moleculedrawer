@@ -142,15 +142,33 @@ drawContext.canvas.nativeCanvas.drawText(displayText, c.x, c.y + fsz/3f, p)
 }
 
 /** 绘制文字标注 */
-fun DrawScope.drawAnnotationText(ann: MoleculeAnnotation, selected: Boolean = false) {
+fun DrawScope.drawAnnotationText(
+    ann: MoleculeAnnotation,
+    selected: Boolean = false,
+    anchorFirstGlyph: Boolean = false,
+    flipLeft: Boolean = false
+) {
     val p = android.graphics.Paint().apply {
         color = if (selected) android.graphics.Color.parseColor("#1976D2") else android.graphics.Color.parseColor("#333333")
         textSize = ANN_TEXT_SIZE * ann.scale
-        textAlign = Paint.Align.CENTER
+        // 官能团缩写：第一个字母（连接点元素）的中心落在原子上，整体向键的反方向展开
+        textAlign = when {
+            !anchorFirstGlyph -> Paint.Align.CENTER
+            flipLeft -> Paint.Align.RIGHT
+            else -> Paint.Align.LEFT
+        }
         isAntiAlias = true
     }
     val fm = p.fontMetrics
     val textCenterY = ann.y - (fm.ascent + fm.descent) / 2f
+    val w0 = p.measureText(ann.text.take(1))
+    val wAll = p.measureText(ann.text)
+    // LEFT: 起点让首字母居中于原子；RIGHT: 终点回退到"首字母居中"的位置
+    val textStartX = when {
+        !anchorFirstGlyph -> ann.x
+        flipLeft -> ann.x + wAll - w0 / 2f
+        else -> ann.x - w0 / 2f
+    }
     if (ann.subScript && ann.text.any { it.isDigit() }) {
         // 自动下标模式：字母正常大小，数字缩小并下沉
         val parts = mutableListOf<Pair<String, Boolean>>() // text, isSub
@@ -166,7 +184,7 @@ fun DrawScope.drawAnnotationText(ann: MoleculeAnnotation, selected: Boolean = fa
             }
         }
         if (current.isNotEmpty()) parts.add(Pair(current.toString(), inDigit))
-        var xPos = ann.x
+        var xPos = textStartX
         val normalSize = ANN_TEXT_SIZE * ann.scale
         val subSize = normalSize * 0.65f
         val subOffset = normalSize * 0.35f // 下沉量
@@ -178,7 +196,7 @@ fun DrawScope.drawAnnotationText(ann: MoleculeAnnotation, selected: Boolean = fa
             xPos += p.measureText(text)
         }
     } else {
-        drawContext.canvas.nativeCanvas.drawText(ann.text, ann.x, textCenterY, p)
+        drawContext.canvas.nativeCanvas.drawText(ann.text, textStartX, textCenterY, p)
     }
 }
 

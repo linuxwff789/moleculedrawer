@@ -466,29 +466,6 @@ if (s.showSaveDialog) {
                 MoleculeDrawToolbar(state = s, layoutEngine = layoutEngine)
 
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    // 空画布引导（画布本身透明，提示绘制在其下层）
-                    if (s.atoms.isEmpty() && s.annotations.isEmpty()) {
-                        Column(
-                            Modifier.align(Alignment.Center),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Icon(Icons.Default.Science, null, tint = Color(0xFFCFD8DC), modifier = Modifier.size(44.dp))
-                            Spacer(Modifier.height(10.dp))
-                            Text("点按画布放置原子", fontSize = 13.sp, color = Color(0xFF78909C))
-                            Spacer(Modifier.height(4.dp))
-                            Text("从原子上拖拽可连键 · 选环工具可直接画环", fontSize = 11.sp, color = Color(0xFF90A4AE))
-                            Spacer(Modifier.height(16.dp))
-                            OutlinedButton(
-                                onClick = { s.showImportDialog = true; s.importInput = "" },
-                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp),
-                                modifier = Modifier.height(40.dp)
-                            ) {
-                                Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("导入 SMILES / Molfile", fontSize = 12.sp)
-                            }
-                        }
-                    }
                     Canvas(Modifier.fillMaxSize().onSizeChanged { s.canvasSizePx = it.toSize(); s.canvasSize.value = Offset(it.width.toFloat(), it.height.toFloat()) }
                         .pointerInput(Unit) { detectTransformGestures { _, pan, zoom, _ ->
                             if (zoom != 1f && s.atoms.isNotEmpty()) { if (!s.isPinchZooming) { s.pushUndo(); s.isPinchZooming = true }
@@ -886,12 +863,20 @@ s.magnifierPos?.let { MainScope().launch { delay(300); s.magnifierPos = null } }
                                             // 点击行为：检测标注或原子（不取消选中）
                                             val tapWp = Offset(rectStart.x - s.canvasOffsetX, rectStart.y - s.canvasOffsetY)
                                             val hitAnn = hitAnnotation(s.annotations, tapWp)
-                                            if (hitAnn != null) {
-                                                val annId = -hitAnn.id
-                                                s.selectedIds = if (annId in s.selectedIds) s.selectedIds - annId else s.selectedIds + annId
-                                            } else {
-                                                hitAtom(s.atoms, tapWp)?.let { a ->
-                                                    s.selectedIds = if (a.id in s.selectedIds) s.selectedIds - a.id else s.selectedIds + a.id
+                                            val tappedAtom = if (hitAnn == null) hitAtom(s.atoms, tapWp) else null
+                                            when {
+                                                hitAnn != null -> {
+                                                    val annId = -hitAnn.id
+                                                    s.selectedIds = if (annId in s.selectedIds) s.selectedIds - annId else s.selectedIds + annId
+                                                }
+                                                tappedAtom != null -> {
+                                                    // 点中任意一个原子 → 选中它所在的整个（连通）分子；再次点击同一分子则取消
+                                                    val comp = connectedAtomIds(s.atoms, s.bonds, tappedAtom.id)
+                                                    s.selectedIds = if (comp == s.selectedIds) emptySet() else comp
+                                                }
+                                                else -> {
+                                                    // 点空白 → 取消选择
+                                                    s.selectedIds = emptySet(); s.collapseGroup(); s.activeGroup = null
                                                 }
                                             }
                                         }
@@ -920,6 +905,29 @@ isScaleDragging = s.isScaleDragging, selBond = s.selBond, benzeneStyle = s.benze
 showAlignGuides = s.showAlignGuides, alignGuideX = s.alignGuideX, alignGuideY = s.alignGuideY,
 tx = tx, ty = ty)
                         }
+                    // 空画布引导：放在 Canvas 之上，按钮才不会被画布的 pointerInput 吃掉点击
+                    if (s.atoms.isEmpty() && s.annotations.isEmpty()) {
+                        Column(
+                            Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.Science, null, tint = Color(0xFFCFD8DC), modifier = Modifier.size(44.dp))
+                            Spacer(Modifier.height(10.dp))
+                            Text("点按画布放置原子", fontSize = 13.sp, color = Color(0xFF78909C))
+                            Spacer(Modifier.height(4.dp))
+                            Text("从原子上拖拽可连键 · 选环工具可直接画环", fontSize = 11.sp, color = Color(0xFF90A4AE))
+                            Spacer(Modifier.height(16.dp))
+                            OutlinedButton(
+                                onClick = { s.showImportDialog = true; s.importInput = "" },
+                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp),
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("导入 SMILES / Molfile", fontSize = 12.sp)
+                            }
+                        }
+                    }
                         MoleculeDrawMagnifier(magnifierPos = s.magnifierPos, state = s)
                 }
 
@@ -987,4 +995,21 @@ private fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Uni
         ) { icon() }
         Text(label, fontSize = 9.sp, color = if (enabled) Color(0xFF444444) else Color(0xFFCCCCCC), maxLines = 1)
     }
+}
+
+/** 与 atomId 连通的全部原子 id（用于“点一下选中整个分子”） */
+private fun connectedAtomIds(atoms: List<MoleculeAtom>, bonds: List<MoleculeBond>, atomId: Int): Set<Int> {
+    val adj = HashMap<Int, MutableList<Int>>()
+    for (b in bonds) {
+        adj.getOrPut(b.atom1) { mutableListOf() }.add(b.atom2)
+        adj.getOrPut(b.atom2) { mutableListOf() }.add(b.atom1)
+    }
+    val seen = mutableSetOf(atomId)
+    val stack = ArrayDeque<Int>()
+    stack.add(atomId)
+    while (stack.isNotEmpty()) {
+        val cur = stack.removeLast()
+        adj[cur]?.forEach { n -> if (seen.add(n)) stack.add(n) }
+    }
+    return seen
 }

@@ -452,6 +452,19 @@ if (s.showSaveDialog) {
                 MoleculeDrawToolbar(state = s, layoutEngine = layoutEngine)
 
                 Box(Modifier.weight(1f).fillMaxWidth()) {
+                    // 空画布引导（画布本身透明，提示绘制在其下层）
+                    if (s.atoms.isEmpty() && s.annotations.isEmpty()) {
+                        Column(
+                            Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(Icons.Default.Science, null, tint = Color(0xFFCFD8DC), modifier = Modifier.size(44.dp))
+                            Spacer(Modifier.height(10.dp))
+                            Text("点按画布放置原子", fontSize = 13.sp, color = Color(0xFF78909C))
+                            Spacer(Modifier.height(4.dp))
+                            Text("从原子上拖拽可连键 · 选环工具可直接画环", fontSize = 11.sp, color = Color(0xFF90A4AE))
+                        }
+                    }
                     Canvas(Modifier.fillMaxSize().onSizeChanged { s.canvasSizePx = it.toSize(); s.canvasSize.value = Offset(it.width.toFloat(), it.height.toFloat()) }
                         .pointerInput(Unit) { detectTransformGestures { _, pan, zoom, _ ->
                             if (zoom != 1f && s.atoms.isNotEmpty()) { if (!s.isPinchZooming) { s.pushUndo(); s.isPinchZooming = true }

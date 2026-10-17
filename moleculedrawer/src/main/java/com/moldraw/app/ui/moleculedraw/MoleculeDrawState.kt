@@ -273,6 +273,7 @@ class MoleculeDrawState {
     var isPinchZooming by mutableStateOf(false)
 
     // ── 导入导出 ──
+    var showMolecularWeight by mutableStateOf(false) // 在分子下方显示分子式/分子量
     var showImportDialog by mutableStateOf(false)
     var importInput by mutableStateOf("")
     var showExportDialog by mutableStateOf(false)

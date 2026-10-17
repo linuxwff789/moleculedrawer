@@ -47,6 +47,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+private const val MW_ROLE_PREFIX = "MW:"
+
 class MoleculeDrawActivity : ComponentActivity() {
     companion object {
         const val EXTRA_SMILES = "extra_smiles"; const val EXTRA_MOL = "extra_mol"; const val EXTRA_JSON = "extra_json"
@@ -385,16 +387,43 @@ if (s.showSaveDialog) {
     )
 }
 
-    // ── 分子量标注：连通性变化时重算一次，拖动时只重排位置 ──
-    var mwLabels by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    // ── 分子量：写成真正的 TEXT 标注（进文档，可保存/移动/导出），结构变化时同步 ──
     val connKey = s.atoms.size * 1000003 +
         s.atoms.map { it.id to it.element }.hashCode() * 31 +
         s.bonds.map { Triple(it.atom1, it.atom2, it.type) }.hashCode()
     LaunchedEffect(connKey, s.showMolecularWeight) {
         if (!s.showMolecularWeight) {
-            mwLabels = emptyMap()
+            s.annotations.removeAll { it.role?.startsWith(MW_ROLE_PREFIX) == true }
         } else {
-            mwLabels = withContext(Dispatchers.Default) { computeMwLabels(s.atoms.toList(), s.bonds.toList(), layoutEngine) }
+            val labels = withContext(Dispatchers.Default) { computeMwLabels(s.atoms.toList(), s.bonds.toList(), layoutEngine) }
+            // 已经不存在的分子：删掉它的标注
+            s.annotations.removeAll { ann ->
+                val r = ann.role ?: return@removeAll false
+                r.startsWith(MW_ROLE_PREFIX) && !labels.containsKey(r.removePrefix(MW_ROLE_PREFIX).replace(";", ","))
+            }
+            for ((key, label) in labels) {
+                val ids = key.split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
+                var minX = Float.MAX_VALUE
+                var maxX = -Float.MAX_VALUE
+                var maxY = -Float.MAX_VALUE
+                for (a in s.atoms) if (a.id in ids) {
+                    if (a.x < minX) minX = a.x
+                    if (a.x > maxX) maxX = a.x
+                    if (a.y > maxY) maxY = a.y
+                }
+                if (minX == Float.MAX_VALUE) continue
+                val role = MW_ROLE_PREFIX + key.replace(",", ";")
+                val cx = (minX + maxX) / 2f          // 水平居中：文字本身就是 Align.CENTER
+                val by = maxY + 26f
+                val existing = s.annotations.find { it.role == role }
+                if (existing == null) {
+                    s.annotations.add(MoleculeAnnotation(nextId(), AnnotationType.TEXT, cx, by, text = label, role = role))
+                } else {
+                    existing.text = label
+                    existing.x = cx
+                    existing.y = by
+                }
+            }
         }
     }
 
@@ -459,7 +488,11 @@ if (s.showSaveDialog) {
                                     tint = if (s.showMolecularWeight) Color(0xFF1A73E8) else Color(0xFF444444)
                                 )
                             },
-                            onClick = { menuExpanded = false; s.showMolecularWeight = !s.showMolecularWeight }
+                            onClick = {
+                                menuExpanded = false
+                                s.pushUndo()
+                                s.showMolecularWeight = !s.showMolecularWeight
+                            }
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
@@ -975,30 +1008,6 @@ tx = tx, ty = ty)
                                 Spacer(Modifier.width(6.dp))
                                 Text("导入 SMILES / Molfile", fontSize = 12.sp)
                             }
-                        }
-                    }
-                    // 分子量标注：画在 Canvas 之上、各分子包围盒下方
-                    if (s.showMolecularWeight && mwLabels.isNotEmpty()) {
-                        mwLabels.forEach { (key, label) ->
-                            val ids = key.split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
-                            var minX = Float.MAX_VALUE
-                            var maxY = -Float.MAX_VALUE
-                            for (a in s.atoms) if (a.id in ids) {
-                                if (a.x < minX) minX = a.x
-                                if (a.y > maxY) maxY = a.y
-                            }
-                            if (minX == Float.MAX_VALUE) return@forEach
-                            Text(
-                                label,
-                                fontSize = 11.sp,
-                                color = Color(0xFF37474F),
-                                modifier = Modifier.offset {
-                                    IntOffset(
-                                        (minX + s.canvasOffsetX).roundToInt(),
-                                        (maxY + s.canvasOffsetY + 24f).roundToInt()
-                                    )
-                                }
-                            )
                         }
                     }
                         MoleculeDrawMagnifier(magnifierPos = s.magnifierPos, state = s)

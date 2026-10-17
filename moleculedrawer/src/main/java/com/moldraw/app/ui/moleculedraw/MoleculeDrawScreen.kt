@@ -304,6 +304,25 @@ loadWorkspaceJson(text, s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle =
             val n = s.extendInput.toIntOrNull(); if (n != null && n > 0 && s.extendStart != null) { s.pushUndo()
                 var px = s.extendStart!!.x; var py = s.extendStart!!.y
                 val startAtom = hitAtom(s.atoms, Offset(px, py)) ?: findMergeAtom(s.atoms, Offset(px, py))
+                if (startAtom == null) {
+                    // 空白处点击 → 以点击点为起点直接画一段锯齿碳链（原子间正常成键）
+                    var angle = -30f
+                    var prevId = -1
+                    for (i in 0 until n) {
+                        if (i > 0) {
+                            angle += if (i % 2 == 1) 60f else -60f
+                            val rad = Math.toRadians(angle.toDouble())
+                            px += BOND_LENGTH * cos(rad).toFloat()
+                            py += BOND_LENGTH * sin(rad).toFloat()
+                        }
+                        s.atoms.add(MoleculeAtom(nextId(), px, py, Element.C))
+                        val cid = s.atoms.last().id
+                        if (prevId > 0) s.bonds.add(MoleculeBond(nextId(), prevId, cid))
+                        prevId = cid
+                    }
+                    s.showExtendDialog = false; s.extendMode = false
+                    return@TextButton
+                }
                 // 计算起始方向角：若有已连接原子，取背离方向；否则取 0°
                 val a0 = if (startAtom != null) { val connected = s.bonds.filter { it.atom1 == startAtom.id || it.atom2 == startAtom.id }
                     if (connected.isNotEmpty()) {
@@ -567,8 +586,12 @@ if (s.showSaveDialog) {
                             DrawTool.RING -> { s.pushUndo(); s.magnifierPos = pos; placeRing(s.atoms, s.bonds, pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY, s.ringType.n, s.ringType.benzene, benzeneStyle = s.benzeneStyle); MainScope().launch { delay(600); s.magnifierPos = null } }
                             DrawTool.BOND -> {
                                 if (s.extendMode) {
-                                    // 延长模式点击：切换到普通BOND的点击行为，让拖拽来处理
-                                    // 点击不做任何事（拖拽吸附才是主要交互）
+                                    // 延长模式：点原子 → 从该原子延长；点空白 → 就在点击位置生成一段碳链
+                                    val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY)
+                                    val hit = hitAtom(s.atoms, wp)
+                                    s.extendStart = if (hit != null) Offset(hit.x, hit.y) else wp
+                                    s.extendInput = "1"
+                                    s.showExtendDialog = true
                                 } else {
                                     s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY)
                                     hitBond(s.bonds, s.atoms, wp)?.let { (bond, _) ->

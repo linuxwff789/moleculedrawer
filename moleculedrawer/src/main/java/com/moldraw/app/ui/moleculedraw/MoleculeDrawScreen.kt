@@ -519,6 +519,27 @@ if (s.showSaveDialog) {
                                     DrawTool.ERASE -> { s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); if (s.selectedIds.isNotEmpty()) { s.bonds.removeAll { it.atom1 in s.selectedIds || it.atom2 in s.selectedIds }; s.atoms.removeAll { it.id in s.selectedIds }; s.annotations.removeAll { -it.id in s.selectedIds }; s.selectedIds = emptySet(); s.activeGroup = null } else { hitAtom(s.atoms, wp)?.let { a -> s.bonds.removeAll { b -> b.atom1 == a.id || b.atom2 == a.id }; s.atoms.remove(a) } }; Unit }
                                     DrawTool.TEXT -> { s.textDialogPos = pos; s.textInput = ""; s.showTextDialog = true }
                                     DrawTool.ARROW -> {} // 箭头不响应点击
+                                    DrawTool.SELECT -> {
+                                        // 点按选择：点原子/键 → 选中整个连通分子；点标注 → 切换标注；点空白 → 取消选择
+                                        val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY)
+                                        val hitAnn = hitAnnotation(s.annotations, wp)
+                                        if (hitAnn != null) {
+                                            val annId = -hitAnn.id
+                                            s.selectedIds = if (annId in s.selectedIds) s.selectedIds - annId else s.selectedIds + annId
+                                        } else {
+                                            val hit = hitAtom(s.atoms, wp)
+                                            val picked: Set<Int>? = if (hit != null) {
+                                                connectedAtomIds(s.atoms, s.bonds, hit.id)
+                                            } else {
+                                                hitBond(s.bonds, s.atoms, wp)?.let { (b, _) ->
+                                                    connectedAtomIds(s.atoms, s.bonds, b.atom1) + connectedAtomIds(s.atoms, s.bonds, b.atom2)
+                                                }
+                                            }
+                                            s.selectedIds = if (picked == null || picked == s.selectedIds) emptySet() else picked
+                                        }
+                                        s.activeGroup = null
+                                        if (s.selectedIds.isNotEmpty()) s.refreshGroup() else s.collapseGroup()
+                                    }
                                     else -> {}
                                 } }
                             }

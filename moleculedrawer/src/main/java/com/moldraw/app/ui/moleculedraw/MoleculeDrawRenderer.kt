@@ -14,15 +14,36 @@ import kotlin.math.*
 // ═══════════════════════════════════════════════
 
 /** 绘制单个键 */
-fun DrawScope.drawBond(a1: MoleculeAtom, a2: MoleculeAtom, type: BondType, kekuleIndex: Int = -1) {
+/** 文字标签的包围盒（半宽, 半高），用于键端避让 */
+fun atomLabelHalfExtents(text: String, fontSize: Float): Pair<Float, Float> {
+    val p = android.graphics.Paint().apply { isAntiAlias = true; textSize = fontSize }
+    val fm = p.fontMetrics
+    val h = fm.descent - fm.ascent
+    return Pair(p.measureText(text) / 2f + 3f, h / 2f + 2f)
+}
+
+/** 沿单位方向 (ux,uy) 从椭圆中心到边界的距离：用来把键缩到文字框外，避免穿模 */
+fun ellipseTrim(halfW: Float, halfH: Float, ux: Float, uy: Float): Float {
+    val a = if (halfW > 0.1f) ux / halfW else 0f
+    val b = if (halfH > 0.1f) uy / halfH else 0f
+    val d = sqrt(a * a + b * b)
+    return if (d > 1e-4f) 1f / d else 0f
+}
+
+fun DrawScope.drawBond(
+    a1: MoleculeAtom, a2: MoleculeAtom, type: BondType, kekuleIndex: Int = -1,
+    box1: Pair<Float, Float>? = null, box2: Pair<Float, Float>? = null
+) {
     val p1 = Offset(a1.x, a1.y); val p2 = Offset(a2.x, a2.y)
     val dx = p2.x - p1.x; val dy = p2.y - p1.y
     val len = sqrt(dx * dx + dy * dy); if (len == 0f) return
     val ux = dx / len; val uy = dy / len
 
-    // 从原子边缘开始画
-    val r1 = if (a1.element == Element.C) CARBON_DOT_R else HETERO_CIRCLE_R
-    val r2 = if (a2.element == Element.C) CARBON_DOT_R else HETERO_CIRCLE_R
+    // 从原子边缘开始画：有文字标签时按标签椭圆边界缩进，避免放大后键穿过字母
+    val r1 = box1?.let { ellipseTrim(it.first, it.second, ux, uy) }
+        ?: (if (a1.element == Element.C) CARBON_DOT_R else HETERO_CIRCLE_R)
+    val r2 = box2?.let { ellipseTrim(it.first, it.second, -ux, -uy) }
+        ?: (if (a2.element == Element.C) CARBON_DOT_R else HETERO_CIRCLE_R)
     val s1 = Offset(p1.x + ux * r1, p1.y + uy * r1)
     val s2 = Offset(p2.x - ux * r2, p2.y - uy * r2)
 

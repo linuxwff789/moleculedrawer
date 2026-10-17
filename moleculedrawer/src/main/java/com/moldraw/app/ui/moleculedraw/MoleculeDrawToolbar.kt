@@ -192,11 +192,14 @@ fun ColumnScope.MoleculeDrawToolbar(
     when (s.tool) {
         DrawTool.ATOM -> {
             Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+              Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+              ) {
                 // 官能团缩写
                 Box {
                     ToolChip(
@@ -223,9 +226,12 @@ fun ColumnScope.MoleculeDrawToolbar(
                 QUICK_ELEMENTS.forEach { e ->
                     ToolChip(selected = s.selElem == e, label = e.symbol, onClick = { s.selElem = e })
                 }
-                ToolChip(selected = false, label = "更多…", onClick = { showElemSheet = true }) {
-                    Icon(Icons.Default.ExpandMore, null, modifier = Modifier.size(16.dp))
-                }
+              }
+              Spacer(Modifier.width(6.dp))
+              // “更多”固定在最右，不随元素行滚走
+              ToolChip(selected = false, label = "更多", onClick = { showElemSheet = true }) {
+                  Icon(Icons.Default.ExpandMore, null, modifier = Modifier.size(16.dp))
+              }
             }
         }
 

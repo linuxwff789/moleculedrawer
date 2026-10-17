@@ -426,6 +426,8 @@ fun sharePdf(
         val len = sqrt(dx*dx + dy*dy)
         if (len < 1f) continue
         val ux = dx/len; val uy = dy/len
+        // 组内键（如 N=O）在编辑器里不画，导出也跳过
+        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel) continue
         val eb1 = expLabelBoxes[a1.id]; val eb2 = expLabelBoxes[a2.id]
         val r1 = eb1?.let { ellipseTrim(it.first, it.second, ux, uy) } ?: CARBON_DOT_R
         val r2 = eb2?.let { ellipseTrim(it.first, it.second, -ux, -uy) } ?: CARBON_DOT_R
@@ -524,8 +526,8 @@ fun sharePdf(
     }
     for (a in atoms) {
         val cx = a.x + offsetX; val cy = a.y + offsetY
-        // 如果原子位置有 FUNC_GROUP 标注，跳过绘制（标注会覆盖）
-        if (annotations.any { it.type == AnnotationType.FUNC_GROUP && abs(it.x - a.x) < 5f && abs(it.y - a.y) < 5f }) continue
+        // 官能团展开的原子全部跳过（编辑器里由缩写文字替代），否则导出会出现"缩写 + 展开原子"两套
+        if (a.funGroupLabel != null) continue
         if (a.element == Element.C) {
             canvas.drawCircle(cx, cy, CARBON_DOT_R, fillPaint)
         } else {

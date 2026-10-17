@@ -11,6 +11,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -406,20 +409,31 @@ if (s.showSaveDialog) {
             title = { Text("分子结构绘制器", fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF7F7F8)),
             actions = {
-                IconButton(onClick = { s.doUndo() }, enabled = s.undoCount > 0) {
-                    Icon(Icons.Default.Undo, "撤销", tint = if (s.undoCount > 0) Color(0xFF333333) else Color(0xFFCCCCCC))
+                TopAction("撤销", enabled = s.undoCount > 0, onClick = { s.doUndo() }) {
+                    Icon(Icons.Default.Undo, null, modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = { s.showImportDialog = true; s.importInput = "" }) {
-                    Icon(Icons.Default.FileOpen, "导入 SMILES / Mol", tint = Color(0xFF444444))
+                TopAction("导入", onClick = { s.showImportDialog = true; s.importInput = "" }) {
+                    Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = { s.showExportDialog = true }) {
-                    Icon(Icons.Default.Share, "导出", tint = Color(0xFF444444))
+                TopAction("导出", onClick = { s.showExportDialog = true }) {
+                    Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp))
                 }
                 Box {
-                    IconButton(onClick = { menuExpanded = true }) {
-                        Icon(Icons.Default.MoreVert, "更多", tint = Color(0xFF444444))
+                    TopAction("更多", onClick = { menuExpanded = true }) {
+                        Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(18.dp))
                     }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("导入 SMILES / Molfile", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; s.showImportDialog = true; s.importInput = "" }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("导出图片 / 文件", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; s.showExportDialog = true }
+                        )
+                        HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("保存项目", fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.Save, null, modifier = Modifier.size(18.dp)) },
@@ -463,6 +477,16 @@ if (s.showSaveDialog) {
                             Text("点按画布放置原子", fontSize = 13.sp, color = Color(0xFF78909C))
                             Spacer(Modifier.height(4.dp))
                             Text("从原子上拖拽可连键 · 选环工具可直接画环", fontSize = 11.sp, color = Color(0xFF90A4AE))
+                            Spacer(Modifier.height(16.dp))
+                            OutlinedButton(
+                                onClick = { s.showImportDialog = true; s.importInput = "" },
+                                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 0.dp),
+                                modifier = Modifier.height(40.dp)
+                            ) {
+                                Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("导入 SMILES / Molfile", fontSize = 12.sp)
+                            }
                         }
                     }
                     Canvas(Modifier.fillMaxSize().onSizeChanged { s.canvasSizePx = it.toSize(); s.canvasSize.value = Offset(it.width.toFloat(), it.height.toFloat()) }
@@ -943,5 +967,24 @@ tx = tx, ty = ty)
                 }
             }
         }
+    }
+}
+
+/** 顶栏动作：图标 + 小字标签，避免 6 个纯图标挤在一起时认不出“导入/导出” */
+@Composable
+private fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit, icon: @Composable () -> Unit) {
+    Column(
+        Modifier
+            .width(52.dp)
+            .height(48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(
+            LocalContentColor provides (if (enabled) Color(0xFF444444) else Color(0xFFCCCCCC))
+        ) { icon() }
+        Text(label, fontSize = 9.sp, color = if (enabled) Color(0xFF444444) else Color(0xFFCCCCCC), maxLines = 1)
     }
 }

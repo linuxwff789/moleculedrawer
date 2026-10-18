@@ -66,6 +66,11 @@ class MoleculeDrawActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 沉浸模式：内容铺满全屏（含状态栏/导航栏区域），系统栏从边缘滑动临时唤出
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        val bars = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+        bars.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        bars.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
         // 读取传入参数
         val inputSmiles = intent?.getStringExtra(EXTRA_SMILES) ?: ""
         val inputMol = intent?.getStringExtra(EXTRA_MOL) ?: ""
@@ -160,7 +165,7 @@ fun RingIcon(ringType: RingType, size: androidx.compose.ui.unit.Dp) {
     DrawTool.PAN -> Icons.Default.PanTool; else -> Icons.Default.Build
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun MoleculeDrawApp(
     onResult: (smiles: String, mol: String, json: String) -> Unit,
@@ -184,7 +189,7 @@ fun MoleculeDrawApp(
     var activeDocId by remember { mutableStateOf(0L) }
     var docSeq by remember { mutableStateOf(1L) }
     var showDocSheet by remember { mutableStateOf(false) }
-    var orientationLocked by remember { mutableStateOf(false) }
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     fun snapshotActiveDoc() {
         val idx = docs.indexOfFirst { it.id == activeDocId }
@@ -569,13 +574,6 @@ if (s.showSaveDialog) {
         }
     }
 
-    // 屏幕方向锁：锁定后不随设备旋转（Activity 已配置 configChanges，切换不会重建、画布不丢）
-    val hostActivity = context as? android.app.Activity
-    LaunchedEffect(orientationLocked) {
-        hostActivity?.requestedOrientation =
-            if (orientationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    }
-
     // 打开的文档列表
     if (showDocSheet) {
         ModalBottomSheet(onDismissRequest = { showDocSheet = false }) {
@@ -630,6 +628,7 @@ if (s.showSaveDialog) {
 
     // 顶栏只保留高频动作（撤销/导入/导出），保存/打开/清空收进 ⋮，避免图标挤压标题
     var menuExpanded by remember { mutableStateOf(false) }
+
     val onSaveProject: () -> Unit = {
         var json = ""
         try {
@@ -652,11 +651,8 @@ if (s.showSaveDialog) {
         }
     }
 
-    Scaffold(topBar = {
-        TopAppBar(
-            title = { Text("分子结构绘制器", fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1) },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF7F7F8)),
-            actions = {
+    // 顶栏动作（竖屏放在 TopAppBar，横屏放进左侧栏）
+    val topActions: @Composable () -> Unit = {
                 TopAction("撤销", enabled = s.undoCount > 0, onClick = { s.doUndo() }) {
                     Icon(Icons.Default.Undo, null, modifier = Modifier.size(18.dp))
                 }
@@ -697,17 +693,6 @@ if (s.showSaveDialog) {
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text(if (orientationLocked) "解锁屏幕方向" else "锁定当前方向", fontSize = 13.sp) },
-                            leadingIcon = {
-                                Icon(
-                                    if (orientationLocked) Icons.Default.ScreenLockRotation else Icons.Default.ScreenRotation,
-                                    null, modifier = Modifier.size(18.dp)
-                                )
-                            },
-                            onClick = { menuExpanded = false; orientationLocked = !orientationLocked }
-                        )
-                        HorizontalDivider()
-                        DropdownMenuItem(
                             text = { Text("新建文档", fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.NoteAdd, null, modifier = Modifier.size(18.dp)) },
                             onClick = { menuExpanded = false; newDoc() }
@@ -747,13 +732,18 @@ if (s.showSaveDialog) {
                         }
                     }
                 }
-            }
-        )
+    }
+
+    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
+        if (!landscape) TopAppBar(
+            windowInsets = WindowInsets(0, 0, 0, 0),
+            title = { Text("分子结构绘制器", fontSize = 16.sp, fontWeight = FontWeight.Medium, maxLines = 1) },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFF7F7F8)),
+            actions = { topActions() }        )
     }) { pad ->
         Box(Modifier.fillMaxSize().padding(pad).background(Color(0xFFFAFAFA))) {
-            // 横屏：工具竖排放在左侧，画布与子工具栏在右侧（Activity 已声明 configChanges，旋转不会重建）
-            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-            Column(Modifier.fillMaxSize().padding(start = if (landscape) 168.dp else 0.dp)) {
+            // 横屏：左侧栏放顶栏动作 + 工具，右侧是子工具栏/画布/状态栏
+            Column(Modifier.fillMaxSize().padding(start = if (landscape) 136.dp else 0.dp)) {
                 if (landscape) {
                     MoleculeContextBar(state = s, layoutEngine = layoutEngine)
                 } else {
@@ -1315,8 +1305,14 @@ tx = tx, ty = ty)
             }
             // 横屏：左侧竖排工具轨（覆盖在内容左侧，内容已留出 168dp）
             if (landscape) {
-                Surface(Modifier.width(168.dp).fillMaxHeight(), color = Color.White, shadowElevation = 4.dp) {
+                Surface(Modifier.width(136.dp).fillMaxHeight(), color = Color.White, shadowElevation = 4.dp) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        Text(
+                            "分子编辑器", fontSize = 11.sp, color = Color(0xFF546E7A),
+                            modifier = Modifier.padding(start = 10.dp, top = 8.dp, bottom = 4.dp)
+                        )
+                        FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = 2) { topActions() }
+                        HorizontalDivider(color = Color(0xFFE6E6E6))
                         MoleculeToolRail(state = s, layoutEngine = layoutEngine, vertical = true)
                     }
                 }

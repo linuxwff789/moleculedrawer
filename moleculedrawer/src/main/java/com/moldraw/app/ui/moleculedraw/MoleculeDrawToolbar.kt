@@ -97,7 +97,7 @@ fun MoleculeToolRail(
     val s = state
     // ═══ 主工具栏：两行五列，等宽，无横向滚动 ═══
     Column(Modifier.fillMaxWidth().background(ToolBarBg).padding(horizontal = 4.dp, vertical = 4.dp)) {
-        PRIMARY_TOOLS.chunked(if (vertical) 2 else 5).forEach { rowTools ->
+        PRIMARY_TOOLS.chunked(if (vertical) 1 else 5).forEach { rowTools ->
             Row(Modifier.fillMaxWidth()) {
                 rowTools.forEach { t ->
                     if (t == DrawTool.RING) {

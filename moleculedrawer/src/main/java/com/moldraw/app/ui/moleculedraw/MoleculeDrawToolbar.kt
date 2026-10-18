@@ -87,18 +87,17 @@ private val ELEMENT_GROUPS: List<Pair<String, List<Element>>> = listOf(
 private val QUICK_ELEMENTS = listOf(Element.C, Element.H, Element.O, Element.N, Element.S, Element.P, Element.F, Element.Cl, Element.Br, Element.I)
 
 /** 绘图工具栏（主工具网格 + 当前工具的子工具栏） */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ColumnScope.MoleculeDrawToolbar(
+fun MoleculeToolRail(
     state: MoleculeDrawState,
-    layoutEngine: MoleculeLayoutEngine? = null
+    layoutEngine: MoleculeLayoutEngine? = null,
+    vertical: Boolean = false
 ) {
     val s = state
-    var showElemSheet by remember { mutableStateOf(false) }
-
     // ═══ 主工具栏：两行五列，等宽，无横向滚动 ═══
     Column(Modifier.fillMaxWidth().background(ToolBarBg).padding(horizontal = 4.dp, vertical = 4.dp)) {
-        PRIMARY_TOOLS.chunked(5).forEach { rowTools ->
+        PRIMARY_TOOLS.chunked(if (vertical) 2 else 5).forEach { rowTools ->
             Row(Modifier.fillMaxWidth()) {
                 rowTools.forEach { t ->
                     if (t == DrawTool.RING) {
@@ -185,7 +184,16 @@ fun ColumnScope.MoleculeDrawToolbar(
             }
         }
     }
+}
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+fun MoleculeContextBar(
+    state: MoleculeDrawState,
+    layoutEngine: MoleculeLayoutEngine? = null
+) {
+    val s = state
+    var showElemSheet by remember { mutableStateOf(false) }
     HorizontalDivider(color = DividerColor, thickness = 1.dp)
 
     // ═══ 子工具栏（随当前工具变化，单行高 40dp）═══
@@ -444,6 +452,15 @@ fun ColumnScope.MoleculeDrawToolbar(
             }
         }
     }
+}
+
+@Composable
+fun ColumnScope.MoleculeDrawToolbar(
+    state: MoleculeDrawState,
+    layoutEngine: MoleculeLayoutEngine? = null
+) {
+    MoleculeToolRail(state, layoutEngine = layoutEngine, vertical = false)
+    MoleculeContextBar(state, layoutEngine = layoutEngine)
 }
 
 /** 主工具按钮：图标在上、文字在下，44dp 高，整块可点（原来 34dp 高、纯文字标签） */

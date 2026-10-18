@@ -653,17 +653,17 @@ if (s.showSaveDialog) {
 
     // 顶栏动作（竖屏放在 TopAppBar，横屏放进左侧栏）
     val topActions: @Composable () -> Unit = {
-                TopAction("撤销", enabled = s.undoCount > 0, onClick = { s.doUndo() }) {
+                TopAction("撤销", enabled = s.undoCount > 0, compact = landscape, onClick = { s.doUndo() }) {
                     Icon(Icons.Default.Undo, null, modifier = Modifier.size(18.dp))
                 }
-                TopAction("导入", onClick = { s.showImportDialog = true; s.importInput = "" }) {
+                TopAction("导入", compact = landscape, onClick = { s.showImportDialog = true; s.importInput = "" }) {
                     Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(18.dp))
                 }
-                TopAction("导出", onClick = { s.showExportDialog = true }) {
+                TopAction("导出", compact = landscape, onClick = { s.showExportDialog = true }) {
                     Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp))
                 }
                 Box {
-                    TopAction("更多", onClick = { menuExpanded = true }) {
+                    TopAction("更多", compact = landscape, onClick = { menuExpanded = true }) {
                         Icon(Icons.Default.MoreVert, null, modifier = Modifier.size(18.dp))
                     }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
@@ -1311,7 +1311,7 @@ tx = tx, ty = ty)
                             "分子编辑器", fontSize = 11.sp, color = Color(0xFF546E7A),
                             modifier = Modifier.padding(start = 10.dp, top = 8.dp, bottom = 4.dp)
                         )
-                        FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = 2) { topActions() }
+                        Row(Modifier.fillMaxWidth()) { topActions() }
                         HorizontalDivider(color = Color(0xFFE6E6E6))
                         MoleculeToolRail(state = s, layoutEngine = layoutEngine, vertical = true)
                     }
@@ -1323,11 +1323,17 @@ tx = tx, ty = ty)
 
 /** 顶栏动作：图标 + 小字标签，避免 6 个纯图标挤在一起时认不出“导入/导出” */
 @Composable
-private fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Unit, icon: @Composable () -> Unit) {
+private fun TopAction(
+    label: String,
+    enabled: Boolean = true,
+    compact: Boolean = false,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit
+) {
     Column(
         Modifier
-            .width(52.dp)
-            .height(48.dp)
+            .width(if (compact) 32.dp else 52.dp)
+            .height(if (compact) 34.dp else 48.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1336,7 +1342,7 @@ private fun TopAction(label: String, enabled: Boolean = true, onClick: () -> Uni
         androidx.compose.runtime.CompositionLocalProvider(
             LocalContentColor provides (if (enabled) Color(0xFF444444) else Color(0xFFCCCCCC))
         ) { icon() }
-        Text(label, fontSize = 9.sp, color = if (enabled) Color(0xFF444444) else Color(0xFFCCCCCC), maxLines = 1)
+        if (!compact) Text(label, fontSize = 9.sp, color = if (enabled) Color(0xFF444444) else Color(0xFFCCCCCC), maxLines = 1)
     }
 }
 

@@ -4,21 +4,21 @@ import androidx.compose.ui.geometry.Offset
 import kotlin.math.*
 
 enum class Element(val symbol: String, val valence: Int, val atomicNumber: Int) {
-    C("C", 4, 6), H("H", 1, 1), O("O", 2, 8), N("N", 3, 7),
-    S("S", 2, 16), P("P", 3, 15), F("F", 1, 9), Cl("Cl", 1, 17),
-    Br("Br", 1, 35), I("I", 1, 53), Na("Na", 1, 11), K("K", 1, 19),
-    Fe("Fe", 2, 26), Cu("Cu", 2, 29), Zn("Zn", 2, 30), Mg("Mg", 2, 12), Ca("Ca", 2, 20), B("B", 3, 5),
-    Si("Si", 4, 14), Se("Se", 2, 34), As("As", 3, 33), Te("Te", 2, 52),
-    Li("Li", 1, 3), Be("Be", 2, 4), Al("Al", 3, 13), Ti("Ti", 4, 22),
-    Mn("Mn", 2, 25), Co("Co", 2, 27), Ni("Ni", 2, 28), Pd("Pd", 2, 46),
-    Pt("Pt", 2, 78), Au("Au", 3, 79), Ag("Ag", 1, 47),
-    // 补充常用元素
-    He("He", 0, 2), Ne("Ne", 0, 10), Ar("Ar", 0, 18),
-    V("V", 5, 23), Cr("Cr", 3, 24), Ga("Ga", 3, 31),
-    Ge("Ge", 4, 32), Rb("Rb", 1, 37), Sr("Sr", 2, 38),
-    Mo("Mo", 6, 42), Cd("Cd", 2, 48), Sn("Sn", 4, 50),
-    Sb("Sb", 3, 51), Cs("Cs", 1, 55), Ba("Ba", 2, 56), W("W", 6, 74),
-    Hg("Hg", 2, 80), Tl("Tl", 3, 81), Pb("Pb", 4, 82), Bi("Bi", 3, 83), In("In", 3, 49);
+    H("H", 1, 1), He("He", 0, 2), Li("Li", 1, 3), Be("Be", 2, 4), B("B", 3, 5), C("C", 4, 6), N("N", 3, 7), O("O", 2, 8),
+    F("F", 1, 9), Ne("Ne", 0, 10), Na("Na", 1, 11), Mg("Mg", 2, 12), Al("Al", 3, 13), Si("Si", 4, 14), P("P", 3, 15), S("S", 2, 16),
+    Cl("Cl", 1, 17), Ar("Ar", 0, 18), K("K", 1, 19), Ca("Ca", 2, 20), Sc("Sc", 3, 21), Ti("Ti", 4, 22), V("V", 5, 23), Cr("Cr", 3, 24),
+    Mn("Mn", 2, 25), Fe("Fe", 2, 26), Co("Co", 2, 27), Ni("Ni", 2, 28), Cu("Cu", 2, 29), Zn("Zn", 2, 30), Ga("Ga", 3, 31), Ge("Ge", 4, 32),
+    As("As", 3, 33), Se("Se", 2, 34), Br("Br", 1, 35), Kr("Kr", 0, 36), Rb("Rb", 1, 37), Sr("Sr", 2, 38), Y("Y", 3, 39), Zr("Zr", 4, 40),
+    Nb("Nb", 5, 41), Mo("Mo", 6, 42), Tc("Tc", 7, 43), Ru("Ru", 3, 44), Rh("Rh", 3, 45), Pd("Pd", 2, 46), Ag("Ag", 1, 47), Cd("Cd", 2, 48),
+    In("In", 3, 49), Sn("Sn", 4, 50), Sb("Sb", 3, 51), Te("Te", 2, 52), I("I", 1, 53), Xe("Xe", 0, 54), Cs("Cs", 1, 55), Ba("Ba", 2, 56),
+    La("La", 3, 57), Ce("Ce", 3, 58), Pr("Pr", 3, 59), Nd("Nd", 3, 60), Pm("Pm", 3, 61), Sm("Sm", 3, 62), Eu("Eu", 3, 63), Gd("Gd", 3, 64),
+    Tb("Tb", 3, 65), Dy("Dy", 3, 66), Ho("Ho", 3, 67), Er("Er", 3, 68), Tm("Tm", 3, 69), Yb("Yb", 3, 70), Lu("Lu", 3, 71), Hf("Hf", 4, 72),
+    Ta("Ta", 5, 73), W("W", 6, 74), Re("Re", 7, 75), Os("Os", 4, 76), Ir("Ir", 3, 77), Pt("Pt", 2, 78), Au("Au", 3, 79), Hg("Hg", 2, 80),
+    Tl("Tl", 3, 81), Pb("Pb", 4, 82), Bi("Bi", 3, 83), Po("Po", 2, 84), At("At", 1, 85), Rn("Rn", 0, 86), Fr("Fr", 1, 87), Ra("Ra", 2, 88),
+    Ac("Ac", 3, 89), Th("Th", 4, 90), Pa("Pa", 5, 91), U("U", 6, 92), Np("Np", 5, 93), Pu("Pu", 4, 94), Am("Am", 3, 95), Cm("Cm", 3, 96),
+    Bk("Bk", 3, 97), Cf("Cf", 3, 98), Es("Es", 3, 99), Fm("Fm", 3, 100), Md("Md", 3, 101), No("No", 2, 102), Lr("Lr", 3, 103), Rf("Rf", 4, 104),
+    Db("Db", 5, 105), Sg("Sg", 6, 106), Bh("Bh", 7, 107), Hs("Hs", 4, 108), Mt("Mt", 3, 109), Ds("Ds", 3, 110), Rg("Rg", 3, 111), Cn("Cn", 2, 112),
+    Nh("Nh", 3, 113), Fl("Fl", 4, 114), Mc("Mc", 3, 115), Lv("Lv", 2, 116), Ts("Ts", 1, 117), Og("Og", 0, 118);
     companion object { fun fromSymbol(s: String): Element = entries.find { it.symbol == s } ?: C }
 }
 

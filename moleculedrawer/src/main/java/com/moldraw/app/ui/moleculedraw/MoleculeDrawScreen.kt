@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,6 +15,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.background
@@ -32,6 +36,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +54,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val MW_ROLE_PREFIX = "MW:"
+
+/** 打开中的文档槽 */
+private data class DocEntry(val id: Long, val name: String, val json: String, val uri: String)
 
 class MoleculeDrawActivity : ComponentActivity() {
     companion object {
@@ -171,6 +179,118 @@ fun MoleculeDrawApp(
     var currentFilePath by remember { mutableStateOf(initialFilePath ?: "") }
     var currentFileUri by remember { mutableStateOf(initialFileUri ?: "") }
 
+    // ── 多文档：内存里的文档槽（切换时把当前画布序列化进去）──
+    val docs = remember { mutableStateListOf<DocEntry>() }
+    var activeDocId by remember { mutableStateOf(0L) }
+    var docSeq by remember { mutableStateOf(1L) }
+    var showDocSheet by remember { mutableStateOf(false) }
+    var orientationLocked by remember { mutableStateOf(false) }
+
+    fun snapshotActiveDoc() {
+        val idx = docs.indexOfFirst { it.id == activeDocId }
+        if (idx < 0) return
+        val json = runCatching {
+            buildWorkspaceJson(s.atoms.toList(), s.bonds.toList(), s.annotations.toList(), BOND_LENGTH, s.benzeneStyle, layoutEngine)
+        }.getOrDefault("")
+        docs[idx] = docs[idx].copy(json = json, name = s.saveFileName, uri = currentFileUri)
+    }
+
+    fun loadDocInto(doc: DocEntry) {
+        s.pushUndo()
+        s.atoms.clear(); s.bonds.clear(); s.annotations.clear()
+        s.selectedIds = emptySet(); s.activeGroup = null
+        if (doc.json.isNotBlank()) {
+            runCatching { loadWorkspaceJson(doc.json, s.atoms, s.bonds, s.annotations) }
+                .onSuccess { it?.let { style -> s.benzeneStyle = style } }
+        }
+        currentFileUri = doc.uri
+        s.saveFileName = doc.name
+    }
+
+    fun newDoc() {
+        snapshotActiveDoc()
+        docSeq += 1
+        val d = DocEntry(docSeq, "未命名 $docSeq", "", "")
+        docs.add(d)
+        activeDocId = d.id
+        loadDocInto(d)
+    }
+
+    fun switchDoc(doc: DocEntry) {
+        if (doc.id == activeDocId) return
+        snapshotActiveDoc()
+        activeDocId = doc.id
+        loadDocInto(doc)
+    }
+
+    fun closeDoc(id: Long) {
+        val idx = docs.indexOfFirst { it.id == id }
+        if (idx < 0) return
+        if (id == activeDocId) snapshotActiveDoc()
+        docs.removeAt(idx)
+        if (docs.isEmpty()) {
+            docSeq += 1
+            val d = DocEntry(docSeq, "未命名 $docSeq", "", "")
+            docs.add(d); activeDocId = d.id; loadDocInto(d)
+        } else if (id == activeDocId) {
+            val next = docs[idx.coerceAtMost(docs.size - 1)]
+            activeDocId = next.id
+            loadDocInto(next)
+        }
+    }
+
+    // 启动时至少有一个文档
+    LaunchedEffect(Unit) {
+        if (docs.isEmpty()) {
+            docs.add(DocEntry(1L, s.saveFileName, "", currentFileUri))
+            activeDocId = 1L
+        }
+    }
+
+    // ── 定时保存到应用内部临时文件（崩溃 / 被系统杀掉后可恢复）──
+    val autosaveFile = remember { java.io.File(context.filesDir, "autosave.moldraw") }
+    var restoreCandidate by remember { mutableStateOf<java.io.File?>(null) }
+
+    LaunchedEffect(Unit) {
+        if (autosaveFile.exists() && autosaveFile.length() > 20) restoreCandidate = autosaveFile
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(20_000)
+            if (s.atoms.isNotEmpty() || s.annotations.isNotEmpty()) {
+                try {
+                    val json = buildWorkspaceJson(s.atoms.toList(), s.bonds.toList(), s.annotations.toList(), BOND_LENGTH, s.benzeneStyle, layoutEngine)
+                    autosaveFile.writeText(json)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // 恢复提示
+    val rc = restoreCandidate
+    if (rc != null) {
+        val ts = java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(rc.lastModified()))
+        AlertDialog(
+            onDismissRequest = { restoreCandidate = null },
+            title = { Text("恢复未保存的内容", fontWeight = FontWeight.Medium) },
+            text = { Text("发现上次未保存的编辑（$ts），要恢复吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    try {
+                        s.pushUndo()
+                        s.atoms.clear(); s.bonds.clear(); s.annotations.clear()
+                        s.selectedIds = emptySet(); s.activeGroup = null
+                        loadWorkspaceJson(rc.readText(), s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle = it }
+                    } catch (_: Exception) {}
+                    restoreCandidate = null
+                }) { Text("恢复") }
+            },
+            dismissButton = {
+                TextButton(onClick = { runCatching { rc.delete() }; restoreCandidate = null }) { Text("丢弃") }
+            }
+        )
+    }
+
     val molFilePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         uri?.let { try { context.contentResolver.openInputStream(it)?.bufferedReader()?.readText()?.also { s.importInput = it } } catch (_: Exception) {} }
     }
@@ -186,6 +306,7 @@ fun MoleculeDrawApp(
                 // 记录 URI，下次保存直接覆盖
                 currentFileUri = it.toString()
                 currentFilePath = ""
+                runCatching { autosaveFile.delete() }
                 android.widget.Toast.makeText(context, "已保存", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 android.util.Log.e("MOLDRAW", "save project failed", e)
@@ -207,8 +328,9 @@ loadWorkspaceJson(text, s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle =
                 // 从 URI 尝试获取文件名
                 try {
                     val cursor = context.contentResolver.query(it, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-                    cursor?.use { if (it.moveToFirst()) { val name = it.getString(0); s.saveFileName = name } }
+                    cursor?.use { c -> if (c.moveToFirst()) { val name = c.getString(0); s.saveFileName = name } }
                 } catch (_: Exception) {}
+                runCatching { snapshotActiveDoc() }
         } catch (e: Exception) {
             android.util.Log.e("MOLDRAW", "open project failed", e)
         }
@@ -447,6 +569,65 @@ if (s.showSaveDialog) {
         }
     }
 
+    // 屏幕方向锁：锁定后不随设备旋转（Activity 已配置 configChanges，切换不会重建、画布不丢）
+    val hostActivity = context as? android.app.Activity
+    LaunchedEffect(orientationLocked) {
+        hostActivity?.requestedOrientation =
+            if (orientationLocked) ActivityInfo.SCREEN_ORIENTATION_LOCKED else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+    // 打开的文档列表
+    if (showDocSheet) {
+        ModalBottomSheet(onDismissRequest = { showDocSheet = false }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+                Text("打开的文档（${docs.size}）", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(8.dp))
+                docs.forEach { d ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { switchDoc(d); showDocSheet = false }
+                            .padding(vertical = 10.dp, horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (d.id == activeDocId) Icons.Default.CheckCircle else Icons.Default.InsertDriveFile,
+                            null,
+                            tint = if (d.id == activeDocId) Color(0xFF1A73E8) else Color(0xFF78909C),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                (d.name.ifBlank { "未命名" }) + if (d.id == activeDocId) "（当前）" else "",
+                                fontSize = 13.sp, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                            Text(
+                                (if (d.json.isBlank()) "空文档" else "已缓存") + if (d.uri.isNotBlank()) " · 已关联文件" else " · 未保存到文件",
+                                fontSize = 10.sp, color = Color(0xFF90A4AE)
+                            )
+                        }
+                        IconButton(onClick = { closeDoc(d.id) }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Close, "关闭该文档", tint = Color(0xFF9E9E9E), modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Row {
+                    Button(onClick = { newDoc(); showDocSheet = false }, modifier = Modifier.height(38.dp)) {
+                        Text("新建文档", fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedButton(
+                        onClick = { showDocSheet = false; openFileLauncher.launch(arrayOf("application/octet-stream", "*/*")) },
+                        modifier = Modifier.height(38.dp)
+                    ) { Text("打开文件", fontSize = 12.sp) }
+                }
+            }
+        }
+    }
+
     // 顶栏只保留高频动作（撤销/导入/导出），保存/打开/清空收进 ⋮，避免图标挤压标题
     var menuExpanded by remember { mutableStateOf(false) }
     val onSaveProject: () -> Unit = {
@@ -461,6 +642,7 @@ if (s.showSaveDialog) {
             try {
                 val uri = Uri.parse(currentFileUri)
                 context.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter()?.use { w -> if (json.isNotEmpty()) w.write(json) }
+                runCatching { autosaveFile.delete() }
                 android.widget.Toast.makeText(context, "已保存", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 android.widget.Toast.makeText(context, "保存失败: ${e.localizedMessage ?: "未知错误"}", android.widget.Toast.LENGTH_LONG).show()
@@ -514,6 +696,32 @@ if (s.showSaveDialog) {
                                 s.showMolecularWeight = !s.showMolecularWeight
                             }
                         )
+                        DropdownMenuItem(
+                            text = { Text(if (orientationLocked) "解锁屏幕方向" else "锁定当前方向", fontSize = 13.sp) },
+                            leadingIcon = {
+                                Icon(
+                                    if (orientationLocked) Icons.Default.ScreenLockRotation else Icons.Default.ScreenRotation,
+                                    null, modifier = Modifier.size(18.dp)
+                                )
+                            },
+                            onClick = { menuExpanded = false; orientationLocked = !orientationLocked }
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("新建文档", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.NoteAdd, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; newDoc() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("文档列表（${docs.size}）", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.FolderCopy, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; showDocSheet = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("关闭当前文档", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; closeDoc(activeDocId) }
+                        )
                         HorizontalDivider()
                         DropdownMenuItem(
                             text = { Text("保存项目", fontSize = 13.sp) },
@@ -543,8 +751,14 @@ if (s.showSaveDialog) {
         )
     }) { pad ->
         Box(Modifier.fillMaxSize().padding(pad).background(Color(0xFFFAFAFA))) {
-            Column(Modifier.fillMaxSize()) {
-                MoleculeDrawToolbar(state = s, layoutEngine = layoutEngine)
+            // 横屏：工具竖排放在左侧，画布与子工具栏在右侧（Activity 已声明 configChanges，旋转不会重建）
+            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+            Column(Modifier.fillMaxSize().padding(start = if (landscape) 168.dp else 0.dp)) {
+                if (landscape) {
+                    MoleculeContextBar(state = s, layoutEngine = layoutEngine)
+                } else {
+                    MoleculeDrawToolbar(state = s, layoutEngine = layoutEngine)
+                }
 
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     Canvas(Modifier.fillMaxSize().clipToBounds().onSizeChanged { s.canvasSizePx = it.toSize(); s.canvasSize.value = Offset(it.width.toFloat(), it.height.toFloat()) }
@@ -1096,6 +1310,14 @@ tx = tx, ty = ty)
                             )
                             if (selAtoms.isNotEmpty()) Text("${s.selectedIds.size} 个原子", fontSize = 10.sp, color = Color(0xFF2E7D32))
                         }
+                    }
+                }
+            }
+            // 横屏：左侧竖排工具轨（覆盖在内容左侧，内容已留出 168dp）
+            if (landscape) {
+                Surface(Modifier.width(168.dp).fillMaxHeight(), color = Color.White, shadowElevation = 4.dp) {
+                    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        MoleculeToolRail(state = s, layoutEngine = layoutEngine, vertical = true)
                     }
                 }
             }

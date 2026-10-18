@@ -105,6 +105,7 @@ fun MoleculeToolRail(
                             ToolButton(
                                 selected = s.tool == DrawTool.RING,
                                 label = toolLabelOf(t),
+                                compact = vertical,
                                 onClick = {
                                     s.tool = DrawTool.RING
                                     s.ringMenuExpanded = true
@@ -150,6 +151,7 @@ fun MoleculeToolRail(
                             ToolButton(
                                 selected = s.tool == t,
                                 label = toolLabelOf(t),
+                                compact = vertical,
                                 onClick = {
                                     when (t) {
                                         DrawTool.ERASE -> if (s.selectedIds.isNotEmpty()) {
@@ -468,13 +470,14 @@ fun ColumnScope.MoleculeDrawToolbar(
 private fun ToolButton(
     selected: Boolean,
     label: String,
+    compact: Boolean = false,
     onClick: () -> Unit,
     icon: @Composable () -> Unit
 ) {
     Box(
         Modifier
             .fillMaxWidth()
-            .height(46.dp)
+            .height(if (compact) 38.dp else 46.dp)
             .padding(horizontal = 2.dp, vertical = 1.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) ToolSelectedBg else Color.Transparent)
@@ -488,7 +491,7 @@ private fun ToolButton(
             Spacer(Modifier.height(1.dp))
             Text(
                 label,
-                fontSize = 10.sp,
+                fontSize = if (compact) 9.sp else 10.sp,
                 color = if (selected) ToolSelectedFg else ToolFg,
                 maxLines = 1
             )

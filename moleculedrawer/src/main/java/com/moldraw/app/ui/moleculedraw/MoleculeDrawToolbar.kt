@@ -78,11 +78,14 @@ fun toolHint(t: DrawTool): String = when (t) {
 
 /** 元素分组：常用元素放在快捷栏，其余进“更多”面板，避免 47 个元素挤在一条横向滚动条里 */
 private val ELEMENT_GROUPS: List<Pair<String, List<Element>>> = listOf(
-    "有机常用" to listOf(Element.C, Element.H, Element.O, Element.N, Element.S, Element.P, Element.F, Element.Cl, Element.Br, Element.I, Element.B, Element.Si, Element.Se, Element.As, Element.Te),
-    "碱金属 / 碱土金属" to listOf(Element.Li, Element.Na, Element.K, Element.Rb, Element.Cs, Element.Be, Element.Mg, Element.Ca, Element.Sr, Element.Ba),
-    "过渡金属" to listOf(Element.Ti, Element.V, Element.Cr, Element.Mn, Element.Fe, Element.Co, Element.Ni, Element.Cu, Element.Zn, Element.Mo, Element.W, Element.Pd, Element.Pt, Element.Ag, Element.Au, Element.Cd, Element.Hg),
-    "主族金属" to listOf(Element.Al, Element.Ga, Element.In, Element.Tl, Element.Sn, Element.Pb, Element.Sb, Element.Bi),
-    "惰性气体" to listOf(Element.He, Element.Ne, Element.Ar)
+    "常用" to listOf(Element.C, Element.H, Element.O, Element.N, Element.S, Element.P, Element.F, Element.Cl, Element.Br, Element.I),
+    "第 1 周期" to listOf(Element.H, Element.He),
+    "第 2 周期" to listOf(Element.Li, Element.Be, Element.B, Element.C, Element.N, Element.O, Element.F, Element.Ne),
+    "第 3 周期" to listOf(Element.Na, Element.Mg, Element.Al, Element.Si, Element.P, Element.S, Element.Cl, Element.Ar),
+    "第 4 周期" to listOf(Element.K, Element.Ca, Element.Sc, Element.Ti, Element.V, Element.Cr, Element.Mn, Element.Fe, Element.Co, Element.Ni, Element.Cu, Element.Zn, Element.Ga, Element.Ge, Element.As, Element.Se, Element.Br, Element.Kr),
+    "第 5 周期" to listOf(Element.Rb, Element.Sr, Element.Y, Element.Zr, Element.Nb, Element.Mo, Element.Tc, Element.Ru, Element.Rh, Element.Pd, Element.Ag, Element.Cd, Element.In, Element.Sn, Element.Sb, Element.Te, Element.I, Element.Xe),
+    "第 6 周期" to listOf(Element.Cs, Element.Ba, Element.La, Element.Ce, Element.Pr, Element.Nd, Element.Pm, Element.Sm, Element.Eu, Element.Gd, Element.Tb, Element.Dy, Element.Ho, Element.Er, Element.Tm, Element.Yb, Element.Lu, Element.Hf, Element.Ta, Element.W, Element.Re, Element.Os, Element.Ir, Element.Pt, Element.Au, Element.Hg, Element.Tl, Element.Pb, Element.Bi, Element.Po, Element.At, Element.Rn),
+    "第 7 周期" to listOf(Element.Fr, Element.Ra, Element.Ac, Element.Th, Element.Pa, Element.U, Element.Np, Element.Pu, Element.Am, Element.Cm, Element.Bk, Element.Cf, Element.Es, Element.Fm, Element.Md, Element.No, Element.Lr, Element.Rf, Element.Db, Element.Sg, Element.Bh, Element.Hs, Element.Mt, Element.Ds, Element.Rg, Element.Cn, Element.Nh, Element.Fl, Element.Mc, Element.Lv, Element.Ts, Element.Og)
 )
 private val QUICK_ELEMENTS = listOf(Element.C, Element.H, Element.O, Element.N, Element.S, Element.P, Element.F, Element.Cl, Element.Br, Element.I)
 

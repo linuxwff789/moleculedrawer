@@ -25,6 +25,7 @@ class MoleculeDrawState {
     // ── 撤销 ──
     val undo = UndoManager()
     var undoCount by mutableIntStateOf(0)
+    var redoCount by mutableIntStateOf(0)
 
     // ── 自由键拖拽 ──
     var bondStart by mutableStateOf<Offset?>(null)
@@ -293,9 +294,10 @@ var pendingOpenCallback by mutableStateOf<((String) -> Unit)?>(null)
     // ── 画布尺寸 ──
     var canvasSizePx by mutableStateOf(Size.Zero)
 
-    // ── 撤销快捷方法 ──
-    fun doUndo() {
-        val result = undo.pop() ?: return
+    // ── 撤销 / 重做 ──
+    private fun applySnapshot(
+        result: Triple<List<MoleculeAtom>, List<MoleculeBond>, List<MoleculeAnnotation>>
+    ) {
         atoms.clear(); bonds.clear(); annotations.clear()
         val (a, b, anns) = result
         atoms.addAll(a); bonds.addAll(b); annotations.addAll(anns)
@@ -303,11 +305,23 @@ var pendingOpenCallback by mutableStateOf<((String) -> Unit)?>(null)
             .coerceAtLeast(annotations.maxOfOrNull { it.id } ?: 0)
         gNextId = maxId + 1
         undoCount = undo.count
+        redoCount = undo.redoCount
+    }
+
+    fun doUndo() {
+        val result = undo.undo(atoms.toList(), bonds.toList(), annotations.toList()) ?: return
+        applySnapshot(result)
+    }
+
+    fun doRedo() {
+        val result = undo.redo(atoms.toList(), bonds.toList(), annotations.toList()) ?: return
+        applySnapshot(result)
     }
 
     fun pushUndo() {
         undo.push(atoms.toList(), bonds.toList(), annotations.toList())
         undoCount = undo.count
+        redoCount = undo.redoCount
     }
 
     fun updateSelection() {

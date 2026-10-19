@@ -656,6 +656,9 @@ if (s.showSaveDialog) {
                 TopAction("撤销", enabled = s.undoCount > 0, compact = landscape, onClick = { s.doUndo() }) {
                     Icon(Icons.Default.Undo, null, modifier = Modifier.size(18.dp))
                 }
+                TopAction("重做", enabled = s.redoCount > 0, compact = landscape, onClick = { s.doRedo() }) {
+                    Icon(Icons.Default.Redo, null, modifier = Modifier.size(18.dp))
+                }
                 TopAction("导入", compact = landscape, onClick = { s.showImportDialog = true; s.importInput = "" }) {
                     Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(18.dp))
                 }
@@ -1311,7 +1314,7 @@ tx = tx, ty = ty)
                             "分子编辑器", fontSize = 11.sp, color = Color(0xFF546E7A),
                             modifier = Modifier.padding(start = 10.dp, top = 8.dp, bottom = 4.dp)
                         )
-                        Row(Modifier.fillMaxWidth()) { topActions() }
+                        FlowRow(Modifier.fillMaxWidth(), maxItemsInEachRow = 4) { topActions() }
                         HorizontalDivider(color = Color(0xFFE6E6E6))
                         MoleculeToolRail(state = s, layoutEngine = layoutEngine, vertical = true)
                     }
@@ -1332,7 +1335,7 @@ private fun TopAction(
 ) {
     Column(
         Modifier
-            .width(if (compact) 32.dp else 52.dp)
+            .width(if (compact) 32.dp else 46.dp)
             .height(if (compact) 34.dp else 48.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable(enabled = enabled, onClick = onClick),

@@ -808,7 +808,15 @@ if (s.showSaveDialog) {
                         } }
                         .pointerInput(s.tool, s.selElem, s.selBond, s.ringType, s.selectedIds, s.extendMode) { 
         detectTapGestures { pos -> when (s.tool) {
-                            DrawTool.ATOM -> { s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); hitAtom(s.atoms, wp)?.let { hit ->
+                            DrawTool.ATOM -> { if (s.isFuncGroupDragMode && s.selectedFuncGroup != null) {
+                                s.pushUndo()
+                                val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY)
+                                val hit = hitAtom(s.atoms, wp)
+                                applyFunctionalGroupAt(s, s.selectedFuncGroup!!, if (hit != null) hit.x else wp.x, if (hit != null) hit.y else wp.y, hit)
+                                s.isFuncGroupDragMode = false; s.selectedFuncGroup = null
+                                return@detectTapGestures
+                            }
+                            s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); hitAtom(s.atoms, wp)?.let { hit ->
                                 val existing = s.bonds.filter { b -> b.atom1 == hit.id || b.atom2 == hit.id }; val angle = if (existing.isNotEmpty()) { val d = existing.firstNotNullOfOrNull { b -> val o = if (b.atom1 == hit.id) s.atoms.find { it.id == b.atom2 } else s.atoms.find { it.id == b.atom1 }; o?.let { atan2(it.y - hit.y, it.x - hit.x) } }; snapAngle(Math.toDegrees((d ?: 0.0).toDouble()).toFloat() + 120f) } else 0f; val rad = Math.toRadians(angle.toDouble()); s.atoms.add(MoleculeAtom(nextId(), hit.x + BOND_LENGTH * cos(rad).toFloat(), hit.y + BOND_LENGTH * sin(rad).toFloat(), s.selElem)); val lid = s.atoms.last().id; if (!s.bonds.any { (it.atom1 == hit.id && it.atom2 == lid) || (it.atom1 == lid && it.atom2 == hit.id) }) s.bonds.add(MoleculeBond(nextId(), hit.id, lid))
                             } ?: run { val m = findMergeAtom(s.atoms, wp); if (m != null) m.element = s.selElem else s.atoms.add(MoleculeAtom(nextId(), wp.x, wp.y, s.selElem)) } }
                             DrawTool.RING -> { s.pushUndo(); s.magnifierPos = pos; placeRing(s.atoms, s.bonds, pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY, s.ringType.n, s.ringType.benzene, benzeneStyle = s.benzeneStyle); MainScope().launch { delay(600); s.magnifierPos = null } }
@@ -1117,66 +1125,9 @@ val dx = wp.x - s.moveStartOffset.x; val dy = wp.y - s.moveStartOffset.y
                             onDragEnd = { when (s.tool) {
                                 DrawTool.ATOM -> {
         if (s.isFuncGroupDragMode && s.selectedFuncGroup != null && s.dragSrc != null) {
-        val targetAtom = s.atoms.find { it.id == s.dragSrc }
-        if (targetAtom != null) {
-            val fg = s.selectedFuncGroup!!
-            val tx = targetAtom.x; val ty = targetAtom.y
-            // 清除目标位置的旧 FUNC_GROUP 标注（避免重叠残留），保留其他位置的标注
-            s.annotations.removeAll { it.type == AnnotationType.FUNC_GROUP && abs(it.x - tx) < 5f && abs(it.y - ty) < 5f }
-            // 删除目标位置旧官能团的展开原子（若之前已有官能团标注，删除残留的组内原子）
-            val oldConnElems = s.annotations.filter { it.type == AnnotationType.FUNC_GROUP && abs(it.x - tx) < 5f && abs(it.y - ty) < 5f }
-                .mapNotNull { ann -> FUNCTIONAL_GROUPS.firstOrNull { it.label == ann.text } }
-                .flatMap { fgDef -> fgDef.expandAtoms.map { Element.fromSymbol(it.first) } }.toSet()
-            if (oldConnElems.isNotEmpty()) {
-                val oldGroupAtoms = s.atoms.filter { it.funGroupLabel != null }.toList()
-                s.atoms.removeAll { it.id in oldGroupAtoms.map { it.id } }
-                s.bonds.removeAll { b -> oldGroupAtoms.any { it.id == b.atom1 || it.id == b.atom2 } }
+            s.atoms.find { it.id == s.dragSrc }?.let { target ->
+                applyFunctionalGroupAt(s, s.selectedFuncGroup!!, target.x, target.y, target)
             }
-            // 记录邻居
-            val neighborIds = s.bonds
-                .filter { it.atom1 == targetAtom.id || it.atom2 == targetAtom.id }
-                .map { if (it.atom1 == targetAtom.id) it.atom2 else it.atom1 }
-                .toList()
-            // 删除目标原子及其键
-            s.atoms.remove(targetAtom)
-            s.bonds.removeAll { it.atom1 == targetAtom.id || it.atom2 == targetAtom.id }
-
-            // --- 创建官能团所有原子（连接点 + 展开的非H重原子）---
-            val connElem = Element.fromSymbol(fg.expandAtoms[fg.connectIndex].first)
-            val connAtom = MoleculeAtom(nextId(), tx, ty, connElem,
-                funGroupLabel = fg.label, isFunGroupConnector = true)
-            s.atoms.add(connAtom)
-            // 创建展开的非H重原子（如 NO₂ 的 O 原子）
-            val nonConnectList = fg.expandAtoms.filterIndexed { i, _ -> i != fg.connectIndex }
-            var newIdx = 0
-            val memberIds = mutableListOf<Int>()
-            for ((j, pair) in nonConnectList.withIndex()) {
-                val (elemSym, bondType) = pair
-                val elem = Element.fromSymbol(elemSym)
-                if (elem == Element.H) continue // 跳过 H（隐式氢）
-                // 计算展开原子位置：围绕连接点均匀分布
-                val nonHCount = nonConnectList.filter { Element.fromSymbol(it.first) != Element.H }.size.coerceAtLeast(1)
-                val angle = newIdx * (360.0 / nonHCount)
-                val rad = Math.toRadians(angle)
-                val offset = BOND_LENGTH * 0.6f
-                val ax = tx + offset * cos(rad).toFloat()
-                val ay = ty + offset * sin(rad).toFloat()
-                val memberAtom = MoleculeAtom(nextId(), ax, ay, elem,
-                    funGroupLabel = fg.label, isFunGroupConnector = false)
-                s.atoms.add(memberAtom)
-                memberIds.add(memberAtom.id)
-                // 连接点 ←→ 展开原子 键
-                s.bonds.add(MoleculeBond(nextId(), connAtom.id, memberAtom.id, bondType))
-                newIdx++
-            }
-            // 重连邻居到连接点原子
-            for (nid in neighborIds) {
-                if (s.atoms.any { it.id == nid }) {
-                    s.bonds.add(MoleculeBond(nextId(), connAtom.id, nid, BondType.SINGLE))
-                }
-            }
-            // 在原位置加缩写标注（用于显示文字）
-            s.annotations.add(MoleculeAnnotation(nextId(), AnnotationType.FUNC_GROUP, tx, ty, text = fg.label))
         }
         s.isFuncGroupDragMode = false; s.selectedFuncGroup = null; s.isDragging = false; s.dragSrc = null; s.magnifierPos = null
     } else if (s.isDragging) {
@@ -1367,6 +1318,102 @@ private fun TopAction(
         ) { icon() }
         if (!compact) Text(label, fontSize = 9.sp, color = if (enabled) Color(0xFF444444) else Color(0xFFCCCCCC), maxLines = 1)
     }
+}
+
+/**
+ * 把官能团挂到 anchor 上（anchor 为 null 时就在 (x,y) 新建）。
+ *
+ * 语义统一成“挂上去”而不是“替换”：
+ *  - 新建一个连接点原子（如 NO₂ 的 N、CH₃ 的 C），用单键连到 anchor；
+ *  - 展开的非氢成员原子围绕连接点排开，角度避开 anchor 已有的键；
+ *  - 连接点与成员都打上 funGroupLabel（渲染时隐藏），另加一条 FUNC_GROUP 标注显示缩写。
+ * 这样环碳上挂 COOH / CH₃ / NO₂ 都不会破坏环，自动调整后拓扑也能匹配回来。
+ */
+internal fun applyFunctionalGroupAt(
+    s: MoleculeDrawState,
+    fg: FunctionalGroup,
+    x: Float, y: Float,
+    anchor: MoleculeAtom?
+) {
+    // ── 1. 先清掉 anchor 上原有的官能团（连接点 + 组内成员 + 标注），避免隐形残留 ──
+    if (anchor != null) {
+        val oldConn = s.bonds
+            .filter { it.atom1 == anchor.id || it.atom2 == anchor.id }
+            .mapNotNull { b -> s.atoms.find { it.id == if (b.atom1 == anchor.id) b.atom2 else b.atom1 } }
+            .firstOrNull { it.isFunGroupConnector && it.funGroupLabel != null }
+        if (oldConn != null) {
+            val label = oldConn.funGroupLabel!!
+            val groupIds = mutableSetOf(oldConn.id)
+            for (b in s.bonds) {
+                if (b.atom1 != oldConn.id && b.atom2 != oldConn.id) continue
+                val oid = if (b.atom1 == oldConn.id) b.atom2 else b.atom1
+                val other = s.atoms.find { it.id == oid }
+                if (other != null && other.funGroupLabel == label) groupIds.add(oid)
+            }
+            s.atoms.removeAll { it.id in groupIds }
+            s.bonds.removeAll { it.atom1 in groupIds || it.atom2 in groupIds }
+            s.annotations.removeAll {
+                it.type == AnnotationType.FUNC_GROUP && it.text == label &&
+                    abs(it.x - oldConn.x) < 5f && abs(it.y - oldConn.y) < 5f
+            }
+        }
+    }
+
+    // ── 2. 摆放连接点：从 anchor 已有的键的反方向伸出去，避免和现有键重叠 ──
+    fun dirsFromAtom(a: MoleculeAtom): List<Float> =
+        s.bonds.filter { it.atom1 == a.id || it.atom2 == a.id }.mapNotNull { b ->
+            val oid = if (b.atom1 == a.id) b.atom2 else b.atom1
+            val o = s.atoms.find { it.id == oid } ?: return@mapNotNull null
+            Math.toDegrees(atan2((o.y - a.y).toDouble(), (o.x - a.x).toDouble())).toFloat()
+        }
+    val baseAngle: Float = if (anchor == null) 0f else {
+        val dirs = dirsFromAtom(anchor)
+        if (dirs.isEmpty()) 0f else {
+            val sx = dirs.sumOf { cos(Math.toRadians(it.toDouble())) }
+            val sy = dirs.sumOf { sin(Math.toRadians(it.toDouble())) }
+            if (abs(sx) < 1e-4 && abs(sy) < 1e-4) 0f
+            else Math.toDegrees(atan2(-sy, -sx)).toFloat()
+        }
+    }
+    val connElem = Element.fromSymbol(fg.expandAtoms[fg.connectIndex].first)
+    val cx: Float; val cy: Float
+    if (anchor == null) {
+        cx = x; cy = y
+    } else {
+        val rad = Math.toRadians(baseAngle.toDouble())
+        cx = anchor.x + BOND_LENGTH * cos(rad).toFloat()
+        cy = anchor.y + BOND_LENGTH * sin(rad).toFloat()
+    }
+    val connAtom = MoleculeAtom(nextId(), cx, cy, connElem,
+        funGroupLabel = fg.label, isFunGroupConnector = true)
+    s.atoms.add(connAtom)
+    if (anchor != null) s.bonds.add(MoleculeBond(nextId(), anchor.id, connAtom.id, BondType.SINGLE))
+
+    // ── 3. 展开的非氢成员原子，围绕连接点均匀铺开 ──
+    val members = fg.expandAtoms
+        .filterIndexed { i, _ -> i != fg.connectIndex }
+        .filter { Element.fromSymbol(it.first) != Element.H }
+    val n = members.size
+    if (n > 0) {
+        val spacing = if (n <= 2) 120f else 360f / n
+        val startAngle = baseAngle - spacing * (n - 1) / 2f
+        members.forEachIndexed { idx, pair ->
+            val angle = startAngle + spacing * idx
+            val rad = Math.toRadians(angle.toDouble())
+            val mAtom = MoleculeAtom(
+                nextId(),
+                cx + BOND_LENGTH * cos(rad).toFloat(),
+                cy + BOND_LENGTH * sin(rad).toFloat(),
+                Element.fromSymbol(pair.first),
+                funGroupLabel = fg.label
+            )
+            s.atoms.add(mAtom)
+            s.bonds.add(MoleculeBond(nextId(), connAtom.id, mAtom.id, pair.second))
+        }
+    }
+
+    // ── 4. 缩写标注落在连接点上 ──
+    s.annotations.add(MoleculeAnnotation(nextId(), AnnotationType.FUNC_GROUP, cx, cy, text = fg.label))
 }
 
 /** 与 atomId 连通的全部原子 id（用于“点一下选中整个分子”） */

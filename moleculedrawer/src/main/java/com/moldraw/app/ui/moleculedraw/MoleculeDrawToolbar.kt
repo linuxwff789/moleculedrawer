@@ -217,7 +217,7 @@ fun MoleculeContextBar(
                 Box {
                     ToolChip(
                         selected = s.isFuncGroupDragMode,
-                        label = if (s.isFuncGroupDragMode) "拖到原子替换" else "缩写",
+                        label = if (s.isFuncGroupDragMode) "点原子添加" else "缩写",
                         onClick = { s.showFgMenu = true },
                         icon = { Icon(Icons.Default.ShortText, null, modifier = Modifier.size(14.dp)) }
                     )

@@ -531,12 +531,16 @@ fun autoFit(
                                     }.filter { it.id !in used }
                                     val pool = nbrAtoms.filter { it.element in memberElems }
                                     val have = pool.groupingBy { it.element }.eachCount()
-                                    if (need.any { (e, c) -> (have[e] ?: 0) < c }) continue
-                                    val external = nbrAtoms.size - memberElems.size
+                                    // 成员元素计数必须完全一致：多一个 O 的硝基不能被当成亚硝基
+                                    if (have != need) continue
+                                    val chosen = pool
+                                    // 剩下的邻居才是"对外键"
+                                    val external = nbrAtoms.count { it !in chosen }
                                     if (external > 1) continue
-                                    val chosen = mutableListOf<MoleculeAtom>()
-                                    for ((e, c) in need) chosen.addAll(pool.filter { it.element == e }.take(c))
-                                    val score = external * 10 + nbrAtoms.size
+                                    // 位置当次要权重：多个同构基团时按离原标注最近的那个匹配
+                                    val ddx = cand.x - ann.x; val ddy = cand.y - ann.y
+                                    val dist = sqrt(ddx * ddx + ddy * ddy)
+                                    val score = external * 1000 + dist.toInt() + nbrAtoms.size
                                     if (score < bestScore) { bestScore = score; bestConnector = cand; bestMembers = chosen }
                                 }
                                 val connector = bestConnector

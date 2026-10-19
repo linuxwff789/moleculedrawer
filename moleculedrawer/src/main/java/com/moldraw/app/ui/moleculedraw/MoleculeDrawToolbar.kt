@@ -218,8 +218,15 @@ fun MoleculeContextBar(
                 Box {
                     ToolChip(
                         selected = s.isFuncGroupDragMode,
-                        label = if (s.isFuncGroupDragMode) "点原子添加" else "缩写",
-                        onClick = { s.showFgMenu = true },
+                        label = if (s.isFuncGroupDragMode) "退出放置" else "缩写",
+                        onClick = {
+                            if (s.isFuncGroupDragMode) {
+                                // 已在放置模式：再点一次退出，避免误以为还能继续放
+                                s.isFuncGroupDragMode = false; s.selectedFuncGroup = null
+                            } else {
+                                s.showFgMenu = true
+                            }
+                        },
                         icon = { Icon(Icons.Default.ShortText, null, modifier = Modifier.size(14.dp)) }
                     )
                     DropdownMenu(expanded = s.showFgMenu, onDismissRequest = { s.showFgMenu = false }) {

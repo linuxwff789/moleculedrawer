@@ -812,8 +812,9 @@ if (s.showSaveDialog) {
                                 s.pushUndo()
                                 val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY)
                                 val hit = hitAtom(s.atoms, wp)
+                                android.util.Log.d("MOLDRAW_DEBUG", "[FG] tap place ${s.selectedFuncGroup?.label} hit=${hit?.id}")
                                 applyFunctionalGroupAt(s, s.selectedFuncGroup!!, if (hit != null) hit.x else wp.x, if (hit != null) hit.y else wp.y, hit)
-                                s.isFuncGroupDragMode = false; s.selectedFuncGroup = null
+                                // 保持放置模式，可以连续点多个原子；退出靠再点一次"缩写"按钮
                                 return@detectTapGestures
                             }
                             s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); hitAtom(s.atoms, wp)?.let { hit ->
@@ -1126,9 +1127,9 @@ val dx = wp.x - s.moveStartOffset.x; val dy = wp.y - s.moveStartOffset.y
                                 DrawTool.ATOM -> {
                                     if (s.isFuncGroupDragMode && s.selectedFuncGroup != null && s.dragSrc != null) {
                                         s.atoms.find { it.id == s.dragSrc }?.let { target ->
+                                            android.util.Log.d("MOLDRAW_DEBUG", "[FG] drag place ${s.selectedFuncGroup?.label} at ${target.id}")
                                             applyFunctionalGroupAt(s, s.selectedFuncGroup!!, target.x, target.y, target)
                                         }
-                                        s.isFuncGroupDragMode = false; s.selectedFuncGroup = null
                                         s.isDragging = false; s.dragSrc = null; s.magnifierPos = null
                                     } else if (s.isDragging) {
                                         if (s.dragSrc != null) {

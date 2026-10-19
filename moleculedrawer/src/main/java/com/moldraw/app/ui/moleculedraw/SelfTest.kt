@@ -136,7 +136,7 @@ fun runSelfTest(context: Context) {
 
             // 末端碳
             val s2 = buildDoc(withTerminal = true)
-            val term = s2.atoms.first { it.id == 7 }
+            val term = s2.atoms.last()
             applyFunctionalGroupAt(s2, fg, term.x, term.y, term)
             val termOk = s2.atoms.size == 7 && term.funGroupLabel == fg.label &&
                 degreeOf(s2, term) == 1 &&

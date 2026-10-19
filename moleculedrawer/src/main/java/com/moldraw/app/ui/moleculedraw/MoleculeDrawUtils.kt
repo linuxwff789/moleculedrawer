@@ -397,16 +397,12 @@ fun autoFit(
                 } else emptyList()
                 android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] savedFuncGroups count=${savedFuncGroups.size}")
 
-                // 官能团缩写：原子已常驻展开，直接传所有原子（不过滤 FUNC_GROUP 标注避免重复展开）
-                val cleanAnn = annotations?.filter { it.type != AnnotationType.FUNC_GROUP } ?: emptyList()
-                val smiles = layoutEngine.generateSmiles(selAtomsList, selBondsList, cleanAnn)
-                if (smiles == null || smiles.isEmpty()) {
-                    android.util.Log.w("MOLDRAW_DEBUG", "[autoFit] generateSmiles returned null/empty, giving up")
-                    return selSet
-                }
-                android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] Generated SMILES: '$smiles'")
-
-                val result = layoutEngine.layoutAndClean(smiles)
+                // 官能团是"单原子缩写"（同 ChemDraw / Ketcher 的 abbreviation 模型）：
+                // 直接把当前结构（含缩写原子）交给 Indigo 布局，不做 SMILES 往返。
+                // SMILES 往返会把缩写展开成成员原子，回来后只能靠拓扑去猜哪几个属于该基团，
+                // 叔丁基/异丙基这种"成员也是碳"的情况必然认错。
+                val v3000Input = MoleculeData(selAtomsList, selBondsList).toV3000Mol()
+                val result = layoutEngine.layoutAndClean(v3000Input)
                 android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] layoutAndClean result=${if (result == null) "NULL" else "ok (${result.length} chars)"}")
 
                 if (result != null) {
@@ -470,10 +466,23 @@ fun autoFit(
                         val offsetX = oldCenterX - newCenterX
                         val offsetY = oldCenterY - newCenterY
 
-                        // 新原子重新分配 id，并平移到原位置
+                        // 新原子重新分配 id，并平移到原位置。
+                        // 若 Indigo 保持原子顺序（元素序列一致），按序号把旧原子的身份（元素/芳香/
+                        // 手性/官能团标记）原样搬过来 —— 这是唯一不需要拓扑匹配的做法。
                         val idOffset = (atoms.maxOfOrNull { it.id } ?: 0) + 1
-                        val newAtoms = tempAtoms.map { a ->
-                            MoleculeAtom(a.id + idOffset, a.x + offsetX, a.y + offsetY, a.element)
+                        val sameShape = tempAtoms.size == selAtomsList.size &&
+                            tempAtoms.indices.all { i -> tempAtoms[i].element == selAtomsList[i].element }
+                        android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] sameShape=$sameShape temp=${tempAtoms.size} old=${selAtomsList.size}")
+                        val newAtoms = tempAtoms.mapIndexed { i, a ->
+                            val old = if (sameShape) selAtomsList[i] else null
+                            MoleculeAtom(
+                                a.id + idOffset, a.x + offsetX, a.y + offsetY,
+                                old?.element ?: a.element,
+                                aromatic = old?.aromatic ?: false,
+                                chiral = old?.chiral ?: "",
+                                funGroupLabel = old?.funGroupLabel,
+                                isFunGroupConnector = old?.isFunGroupConnector ?: false
+                            )
                         }.toMutableList()
                         val newBonds = tempBonds.map { b ->
                             MoleculeBond(nextId(), b.atom1 + idOffset, b.atom2 + idOffset, b.type)
@@ -510,7 +519,7 @@ fun autoFit(
                         // 重新标记官能团原子：按"连接点元素 + 成员元素计数 + 只允许一个对外键"做拓扑匹配。
                         // 旧实现用"非成员邻居数最多"挑连接点，羧基这类连接点也是 C 的基团会把标注贴到苯环碳上，
                         // 结果就是缩写的组既被展开成原子、缩写又留在画面上（重叠）。
-                        if (savedFuncGroups.isNotEmpty()) {
+                        if (!sameShape && savedFuncGroups.isNotEmpty()) {
                             val adj = HashMap<Int, MutableList<MoleculeBond>>()
                             for (b in newBonds) {
                                 adj.getOrPut(b.atom1) { mutableListOf() }.add(b)
@@ -568,6 +577,20 @@ fun autoFit(
 
                         atoms.addAll(newAtoms)
                         bonds.addAll(newBonds)
+
+                        // 顺序一致时：缩写标注跟着它的连接点原子走，不需要拓扑重认
+                        if (sameShape && annotations != null) {
+                            for (ann in annotations) {
+                                if (ann.type != AnnotationType.FUNC_GROUP) continue
+                                val idx = selAtomsList.indices
+                                    .filter { selAtomsList[it].funGroupLabel == ann.text && selAtomsList[it].isFunGroupConnector }
+                                    .minByOrNull { abs(selAtomsList[it].x - ann.x) + abs(selAtomsList[it].y - ann.y) }
+                                if (idx != null && idx in newAtoms.indices) {
+                                    ann.x = newAtoms[idx].x
+                                    ann.y = newAtoms[idx].y
+                                }
+                            }
+                        }
 
                         // 保持原位置，不居中
                         android.util.Log.d("MOLDRAW_DEBUG", "[autoFit] kept original positions (offset=($offsetX,$offsetY)), no centering")
@@ -1464,6 +1487,30 @@ fun buildWorkspaceJson(
 /**
  * 从 JSON 字符串加载工作区，清空并填充 [atoms]、[bonds]、[annotations]。
  */
+
+/**
+ * 旧版本把官能团"展开成隐形成员原子"存进文档；新模型（单原子缩写）只保留连接点。
+ * 读档时收敛一次：同标签的原子只留连接点，其余删掉 —— 它们本来就不参与渲染，
+ * 留着只会在自动调整时被当成真实原子参与布局。
+ */
+fun collapseLegacyGroups(
+    atoms: MutableList<MoleculeAtom>,
+    bonds: MutableList<MoleculeBond>,
+    annotations: List<MoleculeAnnotation>
+) {
+    for (ann in annotations) {
+        if (ann.type != AnnotationType.FUNC_GROUP) continue
+        val members = atoms.filter { it.funGroupLabel == ann.text }
+        if (members.size <= 1) continue
+        val conn = members.firstOrNull { it.isFunGroupConnector }
+            ?: members.minByOrNull { abs(it.x - ann.x) + abs(it.y - ann.y) } ?: continue
+        val drop = members.filter { it.id != conn.id }.map { it.id }.toSet()
+        atoms.removeAll { it.id in drop }
+        bonds.removeAll { it.atom1 in drop || it.atom2 in drop }
+        android.util.Log.d("MOLDRAW_DEBUG", "[collapse] ${ann.text}: dropped ${drop.size} legacy atoms")
+    }
+}
+
 fun loadWorkspaceJson(
     json: String,
     atoms: MutableList<MoleculeAtom>,
@@ -1549,6 +1596,7 @@ fun loadWorkspaceJson(
         atoms.addAll(tempAtoms)
         bonds.addAll(tempBonds)
         annotations.addAll(tempAnnotations)
+        collapseLegacyGroups(atoms, bonds, annotations)
 
         // 应用渲染参数（如果有）
         renderParams["strokeWidth"]?.let { v -> STROKE_WIDTH = v }

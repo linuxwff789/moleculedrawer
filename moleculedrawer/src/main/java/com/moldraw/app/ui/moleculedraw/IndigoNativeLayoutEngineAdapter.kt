@@ -142,8 +142,9 @@ class IndigoNativeLayoutEngineAdapter : MoleculeLayoutEngine {
             }
             // 官能团缩写标注：如果原子已标记 funGroupLabel（常驻展开），不再重复展开
             val hasFuncGroup = annotations.any { it.type == AnnotationType.FUNC_GROUP }
-            val atomsAlreadyExpanded = atoms.any { it.funGroupLabel != null }
-            val (expandedAtoms, expandedBonds) = if (hasFuncGroup && !atomsAlreadyExpanded) {
+            // 官能团是单原子缩写：文档里只有连接点原子，成员按定义临时展开，
+            // 所以只要有 FUNC_GROUP 标注就展开（不再用“是否已展开”的旧判断）
+            val (expandedAtoms, expandedBonds) = if (hasFuncGroup) {
                 val result = expandFunctionalGroups(atoms, bonds, annotations)
                 android.util.Log.d("MOLDRAW_DEBUG", "[IndigoNative] expandFunctionalGroups: atoms ${atoms.size}->${result.first.size}, bonds ${bonds.size}->${result.second.size}")
                 result

@@ -1399,28 +1399,9 @@ internal fun applyFunctionalGroupAt(
     s.atoms.add(connAtom)
     if (anchor != null) s.bonds.add(MoleculeBond(nextId(), anchor.id, connAtom.id, BondType.SINGLE))
 
-    // ── 3. 展开的非氢成员原子，围绕连接点均匀铺开 ──
-    val members = fg.expandAtoms
-        .filterIndexed { i, _ -> i != fg.connectIndex }
-        .filter { Element.fromSymbol(it.first) != Element.H }
-    val n = members.size
-    if (n > 0) {
-        val spacing = if (n <= 2) 120f else 360f / n
-        val startAngle = baseAngle - spacing * (n - 1) / 2f
-        members.forEachIndexed { idx, pair ->
-            val angle = startAngle + spacing * idx
-            val rad = Math.toRadians(angle.toDouble())
-            val mAtom = MoleculeAtom(
-                nextId(),
-                cx + BOND_LENGTH * cos(rad).toFloat(),
-                cy + BOND_LENGTH * sin(rad).toFloat(),
-                Element.fromSymbol(pair.first),
-                funGroupLabel = fg.label
-            )
-            s.atoms.add(mAtom)
-            s.bonds.add(MoleculeBond(nextId(), connAtom.id, mAtom.id, pair.second))
-        }
-    }
+    // ── 3. 缩写是"单原子"模型（与 ChemDraw / Ketcher 的 abbreviation 一致）：
+    //        文档里只保留连接点这一个原子，成员不落库；需要 SMILES / 分子量时再按定义展开。
+    //        这样既不会有隐形原子残留，自动调整后也不需要靠拓扑去猜哪几个原子属于这个基团。
 
     // ── 4. 缩写标注落在连接点上 ──
     s.annotations.add(MoleculeAnnotation(nextId(), AnnotationType.FUNC_GROUP, cx, cy, text = fg.label))

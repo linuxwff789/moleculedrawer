@@ -912,10 +912,12 @@ fun shareBitmap(
             val sym = a.element.symbol
             if (h == 0) sym else if (h == 1) "${sym}H" else "${sym}H$h"
         }
-        if (t != null) expLabelBoxes[a.id] = atomLabelHalfExtents(
-            if (a.funGroupLabel != null) t.take(1) else t,
-            if (a.funGroupLabel != null) ANN_TEXT_SIZE * expGsf else FONT_SIZE * expGsf
-        )
+        if (t != null) expLabelBoxes[a.id] =
+            if (a.funGroupLabel != null) atomLabelHalfExtents(t.take(1), ANN_TEXT_SIZE * expGsf)
+            else atomLabelHalfExtentsFor(
+                a.element.symbol, calcImplicitH(a, bonds),
+                FONT_SIZE * expGsf * (if (isProStyle()) 0.95f else 1f)
+            )
     }
 
     for (b in bonds) {
@@ -929,20 +931,27 @@ fun shareBitmap(
         // 组内键（如 N=O）在编辑器里不画，导出也跳过
         if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel) continue
         val eb1 = expLabelBoxes[a1.id]; val eb2 = expLabelBoxes[a2.id]
-        val r1 = eb1?.let { ellipseTrim(it.first, it.second, ux, uy) } ?: CARBON_DOT_R
-        val r2 = eb2?.let { ellipseTrim(it.first, it.second, -ux, -uy) } ?: CARBON_DOT_R
+        val r1 = eb1?.let { ellipseTrim(it.first, it.second, ux, uy) } ?: carbonRadius()
+        val r2 = eb2?.let { ellipseTrim(it.first, it.second, -ux, -uy) } ?: carbonRadius()
         val sx = a1.x + ux * r1 + offsetX; val sy = a1.y + uy * r1 + offsetY
         val ex = a2.x - ux * r2 + offsetX; val ey = a2.y - uy * r2 + offsetY
+        val (bOff, bTrim) = doubleBondParams(len)
 
         when (b.type) {
             BondType.SINGLE -> canvas.drawLine(sx, sy, ex, ey, strokePaint)
             BondType.DOUBLE -> {
-                val px = -uy * 3f; val py = ux * 3f
+                val px = -uy * bOff; val py = ux * bOff
                 canvas.drawLine(sx+px, sy+py, ex+px, ey+py, strokePaint)
-                canvas.drawLine(sx-px, sy-py, ex-px, ey-py, strokePaint)
+                if (bTrim > 0f) {
+                    val ax = sx + (ex-sx)*bTrim - px; val ay = sy + (ey-sy)*bTrim - py
+                    val bx = ex - (ex-sx)*bTrim - px; val by = ey - (ey-sy)*bTrim - py
+                    canvas.drawLine(ax, ay, bx, by, strokePaint)
+                } else {
+                    canvas.drawLine(sx-px, sy-py, ex-px, ey-py, strokePaint)
+                }
             }
             BondType.TRIPLE -> {
-                val px = -uy * 4f; val py = ux * 4f
+                val px = -uy * max(bOff, 4f); val py = ux * max(bOff, 4f)
                 canvas.drawLine(sx, sy, ex, ey, strokePaint)
                 canvas.drawLine(sx+px, sy+py, ex+px, ey+py, strokePaint)
                 canvas.drawLine(sx-px, sy-py, ex-px, ey-py, strokePaint)
@@ -992,7 +1001,7 @@ fun shareBitmap(
                 val dx = a2.first - a1.first; val dy = a2.second - a1.second
                 val len = sqrt(dx*dx + dy*dy); if (len < 1f) continue
                 val ux = dx/len; val uy = dy/len
-                val r = CARBON_DOT_R
+                val r = carbonRadius()
                 val sx = a1.first + ux * r + offsetX; val sy = a1.second + uy * r + offsetY
                 val ex = a2.first - ux * r + offsetX; val ey = a2.second - uy * r + offsetY
                 canvas.drawLine(sx, sy, ex, ey, strokePaint)
@@ -1015,15 +1024,13 @@ fun shareBitmap(
                 val dx = a2.first - a1.first; val dy = a2.second - a1.second
                 val len = sqrt(dx*dx + dy*dy); if (len < 1f) continue
                 val ux = dx/len; val uy = dy/len
-                val r = CARBON_DOT_R
+                val r = carbonRadius()
                 val sx = a1.first + ux * r + offsetX; val sy = a1.second + uy * r + offsetY
                 val ex = a2.first - ux * r + offsetX; val ey = a2.second - uy * r + offsetY
                 if (i % 2 == 0) {
                     canvas.drawLine(sx, sy, ex, ey, strokePaint)
                 } else {
-                    val px = -uy * 3f; val py = ux * 3f
-                    canvas.drawLine(sx+px, sy+py, ex+px, ey+py, doublePaint)
-                    canvas.drawLine(sx-px, sy-py, ex-px, ey-py, doublePaint)
+                    drawRingDoubleBond(canvas, sx, sy, ex, ey, ux, uy, doublePaint)
                 }
             }
         }
@@ -1035,7 +1042,7 @@ fun shareBitmap(
         // 官能团展开的原子全部跳过（编辑器里由缩写文字替代），否则导出会出现"缩写 + 展开原子"两套
         if (a.funGroupLabel != null) continue
         if (a.element == Element.C) {
-            canvas.drawCircle(cx, cy, CARBON_DOT_R, fillPaint)
+            if (!isProStyle()) canvas.drawCircle(cx, cy, CARBON_DOT_R, fillPaint)
         } else {
             val symbol = a.element.symbol
             val connected = bonds.filter { it.atom1 == a.id || it.atom2 == a.id }
@@ -1048,8 +1055,10 @@ bondOrderSum += when (b.type) {
                     }
             }
             val hCount = (a.element.valence - bondOrderSum).coerceAtLeast(0)
-            val text = if (hCount == 0) symbol else if (hCount == 1) "${symbol}H" else "${symbol}H${hCount}"
-            canvas.drawText(text, cx, cy + FONT_SIZE * gsf / 3f, textPaint)
+            val tl = android.graphics.Paint(textPaint).apply {
+                textSize = FONT_SIZE * gsf * (if (isProStyle()) 0.95f else 1f)
+            }
+            drawHeteroAtomLabel(canvas, cx, cy, symbol, hCount, tl.textSize, tl)
         }
     }
 

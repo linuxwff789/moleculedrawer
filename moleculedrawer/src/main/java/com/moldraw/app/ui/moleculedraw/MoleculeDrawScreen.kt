@@ -66,6 +66,8 @@ class MoleculeDrawActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // 绘制风格（经典 / 专业）是全局偏好，启动时恢复
+        DrawStyleState.load(this)
         // 沉浸模式：内容铺满全屏（含状态栏/导航栏区域），系统栏从边缘滑动临时唤出
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         val bars = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
@@ -659,8 +661,15 @@ if (s.showSaveDialog) {
                 TopAction("重做", enabled = s.redoCount > 0, compact = landscape, onClick = { s.doRedo() }) {
                     Icon(Icons.Default.Redo, null, modifier = Modifier.size(18.dp))
                 }
-                TopAction("导入", compact = landscape, onClick = { s.showImportDialog = true; s.importInput = "" }) {
-                    Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(18.dp))
+                TopAction(DrawStyleState.style.label, compact = landscape, onClick = {
+                    DrawStyleState.toggle(context)
+                    android.widget.Toast.makeText(
+                        context,
+                        if (isProStyle()) "专业样式：碳不画点、双键内侧线缩短、氢数下标" else "经典样式：碳画灰点、双键等长",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }) {
+                    Icon(Icons.Default.Palette, null, modifier = Modifier.size(18.dp))
                 }
                 TopAction("导出", compact = landscape, onClick = { s.showExportDialog = true }) {
                     Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp))

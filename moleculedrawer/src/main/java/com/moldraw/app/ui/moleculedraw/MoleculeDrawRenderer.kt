@@ -1,6 +1,9 @@
 package com.moldraw.app.ui.moleculedraw
 
 import android.graphics.Paint
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -13,7 +16,126 @@ import kotlin.math.*
 // 从 MoleculeDrawUtils.kt 拆分出来
 // ═══════════════════════════════════════════════
 
-/** 绘制单个键 */
+/**
+ * 绘制风格。
+ * CLASSIC   ：碳画灰点，双键两根等长平行线，H 不缩小
+ * PROFESSIONAL：碳不画点（键交于顶点），双键内侧线两端缩进，杂原子氢数排成下标，标签带白底
+ * 两套样式共用同一份数据，切换只影响渲染，不影响保存/导出的结构。
+ */
+enum class DrawStyle(val label: String) { CLASSIC("经典"), PROFESSIONAL("专业") }
+
+object DrawStyleState {
+    private const val PREF_NAME = "moldraw"
+    private const val KEY_STYLE = "drawStyle"
+
+    var style by mutableStateOf(DrawStyle.PROFESSIONAL)
+
+    fun load(context: android.content.Context) {
+        val v = context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+            .getString(KEY_STYLE, DrawStyle.PROFESSIONAL.name)
+        style = runCatching { DrawStyle.valueOf(v ?: DrawStyle.PROFESSIONAL.name) }
+            .getOrDefault(DrawStyle.PROFESSIONAL)
+    }
+
+    fun toggle(context: android.content.Context) {
+        style = if (style == DrawStyle.PROFESSIONAL) DrawStyle.CLASSIC else DrawStyle.PROFESSIONAL
+        context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+            .edit().putString(KEY_STYLE, style.name).apply()
+    }
+}
+
+fun isProStyle(): Boolean = DrawStyleState.style == DrawStyle.PROFESSIONAL
+
+/** 碳原子的绘制半径：经典样式画灰点、键端让开；专业样式不画点、键交于顶点 */
+fun carbonRadius(): Float = if (isProStyle()) 0f else CARBON_DOT_R
+
+/** 双键第二根线的垂直偏移（单侧）与两端缩进比例 */
+fun doubleBondParams(len: Float): Pair<Float, Float> =
+    if (isProStyle()) Pair((len * 0.095f).coerceIn(3.2f, 6.5f), 0.13f) else Pair(3f, 0f)
+
+/** 杂原子标签宽度（专业样式把氢数排成下标，占位比整字号小） */
+fun atomLabelHalfExtentsFor(symbol: String, hCount: Int, fontSize: Float): Pair<Float, Float> {
+    if (!isProStyle()) {
+        val t = if (hCount == 0) symbol else if (hCount == 1) "${symbol}H" else "${symbol}H$hCount"
+        return atomLabelHalfExtents(t, fontSize)
+    }
+    val p = Paint().apply { isAntiAlias = true; textSize = fontSize }
+    val wSym = p.measureText(symbol)
+    val wH = if (hCount > 0) p.measureText("H") else 0f
+    p.textSize = fontSize * 0.62f
+    val wSub = if (hCount > 1) p.measureText(hCount.toString()) else 0f
+    p.textSize = fontSize
+    val fm = p.fontMetrics
+    return Pair((wSym + wH + wSub) / 2f + 3.5f, (fm.descent - fm.ascent) / 2f + 2.5f)
+}
+
+/**
+ * 画杂原子标签（Compose 与两套导出渲染共用，都是 android.graphics.Canvas）。
+ * 专业样式：元素符号 + H 同字号，氢原子个数缩小下沉成下标，并在文字底下垫白底遮住键端。
+ */
+fun drawHeteroAtomLabel(
+    canvas: android.graphics.Canvas,
+    cx: Float,
+    cy: Float,
+    symbol: String,
+    hCount: Int,
+    fontSize: Float,
+    paint: Paint
+) {
+    if (!isProStyle()) {
+        val text = if (hCount == 0) symbol else if (hCount == 1) "${symbol}H" else "${symbol}H$hCount"
+        paint.textAlign = Paint.Align.CENTER
+        paint.textSize = fontSize
+        canvas.drawText(text, cx, cy + fontSize / 3f, paint)
+        return
+    }
+    paint.textSize = fontSize
+    val wSym = paint.measureText(symbol)
+    val wH = if (hCount > 0) paint.measureText("H") else 0f
+    val sub = if (hCount > 1) hCount.toString() else ""
+    val subSize = fontSize * 0.62f
+    paint.textSize = subSize
+    val wSub = if (sub.isNotEmpty()) paint.measureText(sub) else 0f
+    paint.textSize = fontSize
+    val fm = paint.fontMetrics
+    val baseY = cy - (fm.ascent + fm.descent) / 2f
+    val total = wSym + wH + wSub
+    val x0 = cx - total / 2f
+    // 白底：盖住键端与环线，标签像"贴"在结构上（ChemDraw 的做法）
+    val oldColor = paint.color
+    paint.color = android.graphics.Color.WHITE
+    canvas.drawRect(x0 - 1.5f, baseY + fm.ascent - 1f, x0 + total + 1.5f, baseY + fm.descent + 1.5f, paint)
+    paint.color = oldColor
+    paint.textAlign = Paint.Align.LEFT
+    canvas.drawText(symbol, x0, baseY, paint)
+    if (hCount > 0) canvas.drawText("H", x0 + wSym, baseY, paint)
+    if (sub.isNotEmpty()) {
+        paint.textSize = subSize
+        canvas.drawText(sub, x0 + wSym + wH, baseY + fontSize * 0.17f, paint)
+        paint.textSize = fontSize
+    }
+}
+
+/** 芳香环上的凯库勒双键（两套导出渲染共用，样式与屏幕一致） */
+fun drawRingDoubleBond(
+    canvas: android.graphics.Canvas,
+    sx: Float, sy: Float, ex: Float, ey: Float,
+    ux: Float, uy: Float, paint: Paint
+) {
+    val len = hypot(ex - sx, ey - sy)
+    val (off, trim) = doubleBondParams(len)
+    val px = -uy * off; val py = ux * off
+    canvas.drawLine(sx + px, sy + py, ex + px, ey + py, paint)
+    if (trim > 0f) {
+        canvas.drawLine(
+            sx + (ex - sx) * trim - px, sy + (ey - sy) * trim - py,
+            ex - (ex - sx) * trim - px, ey - (ey - sy) * trim - py, paint
+        )
+    } else {
+        canvas.drawLine(sx - px, sy - py, ex - px, ey - py, paint)
+    }
+}
+
 /** 把缩写拆成"元素+紧跟的下标"词元，例如 NO₂ → [N, O₂] */
 fun functionalLabelTokens(text: String): List<String> {
     val tokens = mutableListOf<String>()
@@ -58,17 +180,18 @@ fun DrawScope.drawBond(
     val ux = dx / len; val uy = dy / len
 
     // 从原子边缘开始画：有文字标签时按标签椭圆边界缩进，避免放大后键穿过字母
-    val r1 = box1?.let { ellipseTrim(it.first, it.second, ux, uy) }
-        ?: (if (a1.element == Element.C) CARBON_DOT_R else HETERO_CIRCLE_R)
-    val r2 = box2?.let { ellipseTrim(it.first, it.second, -ux, -uy) }
-        ?: (if (a2.element == Element.C) CARBON_DOT_R else HETERO_CIRCLE_R)
+    val r1 = box1?.let { ellipseTrim(it.first, it.second, ux, uy) } ?: carbonRadius()
+    val r2 = box2?.let { ellipseTrim(it.first, it.second, -ux, -uy) } ?: carbonRadius()
     val s1 = Offset(p1.x + ux * r1, p1.y + uy * r1)
     val s2 = Offset(p2.x - ux * r2, p2.y - uy * r2)
 
     val bondColor = Color(0xFF333333)
+    // 专业样式线更细一点，接近印刷稿
+    val sw = if (isProStyle()) (STROKE_WIDTH - 0.7f).coerceAtLeast(1.8f) else STROKE_WIDTH
+    val (off, trim) = doubleBondParams(len)
     when (type) {
         BondType.SINGLE -> {
-            drawLine(bondColor, s1, s2, strokeWidth = STROKE_WIDTH)
+            drawLine(bondColor, s1, s2, strokeWidth = sw)
         }
         BondType.WEDGE_UP -> {
             val wedgeHalfW = 5f
@@ -101,29 +224,42 @@ fun DrawScope.drawBond(
             }
         }
         BondType.DOUBLE -> {
-            val px = -uy * 3f; val py = ux * 3f
-            drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = STROKE_WIDTH - 0.5f)
-            drawLine(bondColor, Offset(s1.x - px, s1.y - py), Offset(s2.x - px, s2.y - py), strokeWidth = STROKE_WIDTH - 0.5f)
+            val px = -uy * off; val py = ux * off
+            drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = sw - 0.3f)
+            if (trim > 0f) {
+                // 专业样式：第二根线两端缩进，形成"一长一短"的印刷体双键
+                val ax = s1.x + (s2.x - s1.x) * trim - px; val ay = s1.y + (s2.y - s1.y) * trim - py
+                val bx = s2.x - (s2.x - s1.x) * trim - px; val by = s2.y - (s2.y - s1.y) * trim - py
+                drawLine(bondColor, Offset(ax, ay), Offset(bx, by), strokeWidth = sw - 0.3f)
+            } else {
+                drawLine(bondColor, Offset(s1.x - px, s1.y - py), Offset(s2.x - px, s2.y - py), strokeWidth = sw - 0.5f)
+            }
         }
         BondType.TRIPLE -> {
-            drawLine(bondColor, s1, s2, strokeWidth = STROKE_WIDTH - 1f)
-            val px = -uy * 4f; val py = ux * 4f
-            drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = STROKE_WIDTH - 1f)
-            drawLine(bondColor, Offset(s1.x - px, s1.y - py), Offset(s2.x - px, s2.y - py), strokeWidth = STROKE_WIDTH - 1f)
+            drawLine(bondColor, s1, s2, strokeWidth = sw - 0.8f)
+            val px = -uy * max(off, 4f); val py = ux * max(off, 4f)
+            drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = sw - 0.8f)
+            drawLine(bondColor, Offset(s1.x - px, s1.y - py), Offset(s2.x - px, s2.y - py), strokeWidth = sw - 0.8f)
         }
         BondType.AROMATIC -> {
             if (kekuleIndex >= 0) {
                 // 凯库勒式：按奇偶画单双交替
                 if (kekuleIndex % 2 == 0) {
-                    drawLine(bondColor, s1, s2, strokeWidth = STROKE_WIDTH)
+                    drawLine(bondColor, s1, s2, strokeWidth = sw)
                 } else {
-                    val px = -uy * 3f; val py = ux * 3f
-                    drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = STROKE_WIDTH - 0.5f)
-                    drawLine(bondColor, Offset(s1.x - px, s1.y - py), Offset(s2.x - px, s2.y - py), strokeWidth = STROKE_WIDTH - 0.5f)
+                    val px = -uy * off; val py = ux * off
+                    drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = sw - 0.4f)
+                    if (trim > 0f) {
+                        val ax = s1.x + (s2.x - s1.x) * trim - px; val ay = s1.y + (s2.y - s1.y) * trim - py
+                        val bx = s2.x - (s2.x - s1.x) * trim - px; val by = s2.y - (s2.y - s1.y) * trim - py
+                        drawLine(bondColor, Offset(ax, ay), Offset(bx, by), strokeWidth = sw - 0.4f)
+                    } else {
+                        drawLine(bondColor, Offset(s1.x - px, s1.y - py), Offset(s2.x - px, s2.y - py), strokeWidth = sw - 0.5f)
+                    }
                 }
             } else {
                 // 鲍林式：实线绘制（内切圆单独画在环中心）
-                drawLine(bondColor, s1, s2, strokeWidth = STROKE_WIDTH)
+                drawLine(bondColor, s1, s2, strokeWidth = sw)
             }
         }
     }
@@ -138,25 +274,21 @@ fun DrawScope.drawAtom(
 ) {
     val c = Offset(a.x, a.y)
     // 字号跟随键长（分子放大/缩小时同步变化）
-    val fsz = FONT_SIZE * fontScale
+    val fsz = FONT_SIZE * fontScale * (if (isProStyle()) 0.95f else 1f)
     val p = Paint().apply {
         color = android.graphics.Color.BLACK; textSize = fsz
         textAlign = Paint.Align.CENTER; isAntiAlias = true
     }
     // 如果该原子属于 FUNC_GROUP（有 funGroupLabel），跳过绘制（标注文字替代）
     if (a.funGroupLabel != null) return
-    // 诊断日志：记录实际被绘制的非C原子
-    if (a.element != Element.C) android.util.Log.d("MOLDRAW_DEBUG", "[drawAtom] drawing ${a.id}(${a.element.symbol}) at (${a.x.toInt()},${a.y.toInt()})")
     if (a.element == Element.C) {
-drawCircle(Color(0xFF666666), CARBON_DOT_R, c)
-} else {
-val symbol = a.element.symbol
-val hCount = calcImplicitH(a, bonds)
-val displayText = if (hCount == 0) symbol
-else if (hCount == 1) "${symbol}H"
-else "${symbol}H${hCount}"
-drawContext.canvas.nativeCanvas.drawText(displayText, c.x, c.y + fsz/3f, p)
-}
+        // 专业样式不画碳点，键直接交于顶点
+        if (!isProStyle()) drawCircle(Color(0xFF666666), CARBON_DOT_R, c)
+    } else {
+        val symbol = a.element.symbol
+        val hCount = calcImplicitH(a, bonds)
+        drawHeteroAtomLabel(drawContext.canvas.nativeCanvas, c.x, c.y, symbol, hCount, fsz, p)
+    }
 }
 
 /** 绘制文字标注 */

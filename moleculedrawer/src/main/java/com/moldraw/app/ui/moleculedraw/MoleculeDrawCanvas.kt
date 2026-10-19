@@ -124,7 +124,8 @@ fun DrawScope.drawCanvasContent(
             // 缩写文字是"首字母对齐在原子 + 向右展开"，所以键只需让开首字母
             labelBoxes[a.id] = atomLabelHalfExtents(t.take(1), ANN_TEXT_SIZE * fontScaleFor(a.id))
         } else {
-            labelBoxes[a.id] = atomLabelHalfExtents(t, FONT_SIZE * fontScaleFor(a.id))
+            val fs = FONT_SIZE * fontScaleFor(a.id) * (if (isProStyle()) 0.95f else 1f)
+            labelBoxes[a.id] = atomLabelHalfExtentsFor(a.element.symbol, calcImplicitH(a, bonds), fs)
         }
     }
 

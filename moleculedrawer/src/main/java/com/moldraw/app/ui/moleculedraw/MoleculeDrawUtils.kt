@@ -1648,6 +1648,9 @@ fun cleanupExpandedAtoms(
     if (funcAnns.isEmpty()) return
     for (ann in funcAnns) {
         val fg = FUNCTIONAL_GROUPS.firstOrNull { it.label == ann.text } ?: continue
+        // 已经标过（新版本保存的文件自带 funGroupLabel）就跳过，
+        // 否则会另找一个"最近的同元素原子"当连接点，把真实骨架原子标成隐形成员
+        if (atoms.any { it.funGroupLabel == ann.text }) continue
         val connElem = Element.fromSymbol(fg.expandAtoms[fg.connectIndex].first)
         val expandElemSet = fg.expandAtoms.filterIndexed { i, _ -> i != fg.connectIndex }
             .map { Element.fromSymbol(it.first) }.filter { it != Element.H }.toSet()

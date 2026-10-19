@@ -159,6 +159,7 @@ fun MoleculeToolRail(
                                     when (t) {
                                         DrawTool.ERASE -> if (s.selectedIds.isNotEmpty()) {
                                             s.pushUndo()
+                                            s.selectedIds.filter { it > 0 }.forEach { id -> removeFunctionalGroupAround(s, id) }
                                             s.bonds.removeAll { it.atom1 in s.selectedIds || it.atom2 in s.selectedIds }
                                             s.atoms.removeAll { it.id in s.selectedIds }
                                             s.annotations.removeAll { -it.id in s.selectedIds }
@@ -386,6 +387,7 @@ fun MoleculeContextBar(
                         val json = buildWorkspaceJson(atomList, bondList, annList, BOND_LENGTH, s.benzeneStyle)
                         (context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager)
                             .setPrimaryClip(android.content.ClipData.newPlainText("moldraw", json))
+                        s.selectedIds.filter { it > 0 }.forEach { id -> removeFunctionalGroupAround(s, id) }
                         s.bonds.removeAll { it.atom1 in s.selectedIds || it.atom2 in s.selectedIds }
                         s.atoms.removeAll { it.id in s.selectedIds }
                         s.annotations.removeAll { -it.id in s.selectedIds }

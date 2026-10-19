@@ -836,7 +836,7 @@ if (s.showSaveDialog) {
                                     } ?: run { hitAtom(s.atoms, wp)?.let { hit -> s.atoms.add(MoleculeAtom(nextId(), hit.x + BOND_LENGTH, hit.y, Element.C)); val lid = s.atoms.last().id; if (!s.bonds.any { (it.atom1 == hit.id && it.atom2 == lid) || (it.atom1 == lid && it.atom2 == hit.id) }) s.bonds.add(MoleculeBond(nextId(), hit.id, lid, s.selBond)) } ?: run { val a1 = MoleculeAtom(nextId(), wp.x - BOND_LENGTH/2f, wp.y, Element.C); val a2 = MoleculeAtom(nextId(), wp.x + BOND_LENGTH/2f, wp.y, Element.C); s.atoms.add(a1); s.atoms.add(a2); s.bonds.add(MoleculeBond(nextId(), a1.id, a2.id, s.selBond)) } }
                                 }
                             }
-                                    DrawTool.ERASE -> { s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); if (s.selectedIds.isNotEmpty()) { s.bonds.removeAll { it.atom1 in s.selectedIds || it.atom2 in s.selectedIds }; s.atoms.removeAll { it.id in s.selectedIds }; s.annotations.removeAll { -it.id in s.selectedIds }; s.selectedIds = emptySet(); s.activeGroup = null } else { hitAtom(s.atoms, wp)?.let { a -> s.bonds.removeAll { b -> b.atom1 == a.id || b.atom2 == a.id }; s.atoms.remove(a) } }; Unit }
+                                    DrawTool.ERASE -> { s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); if (s.selectedIds.isNotEmpty()) { s.bonds.removeAll { it.atom1 in s.selectedIds || it.atom2 in s.selectedIds }; s.atoms.removeAll { it.id in s.selectedIds }; s.annotations.removeAll { -it.id in s.selectedIds }; s.selectedIds = emptySet(); s.activeGroup = null } else { hitAtom(s.atoms, wp)?.let { a -> removeFunctionalGroupAround(s, a.id); s.bonds.removeAll { b -> b.atom1 == a.id || b.atom2 == a.id }; s.atoms.remove(a) } }; Unit }
                                     DrawTool.TEXT -> { s.textDialogPos = pos; s.textInput = ""; s.showTextDialog = true }
                                     DrawTool.ARROW -> {} // 箭头不响应点击
                                     DrawTool.SELECT -> {
@@ -1419,6 +1419,36 @@ internal fun applyFunctionalGroupAt(
 
     // ── 4. 缩写标注落在连接点上 ──
     s.annotations.add(MoleculeAnnotation(nextId(), AnnotationType.FUNC_GROUP, cx, cy, text = fg.label))
+}
+
+/**
+ * 删掉 atomId 所在的整个官能团（连接点 + 全部成员）和它的缩写标注。
+ * 只沿“同一 funGroupLabel”的键连通，所以不会误删骨架；不在基团里就什么也不做。
+ */
+internal fun removeFunctionalGroupAround(s: MoleculeDrawState, atomId: Int) {
+    val start = s.atoms.find { it.id == atomId } ?: return
+    val label = start.funGroupLabel ?: return
+    val ids = mutableSetOf(atomId)
+    val queue = ArrayDeque<Int>()
+    queue.add(atomId)
+    while (queue.isNotEmpty()) {
+        val cur = queue.removeFirst()
+        for (b in s.bonds) {
+            if (b.atom1 != cur && b.atom2 != cur) continue
+            val oid = if (b.atom1 == cur) b.atom2 else b.atom1
+            val o = s.atoms.find { it.id == oid } ?: continue
+            if (o.funGroupLabel == label && ids.add(oid)) queue.add(oid)
+        }
+    }
+    val conn = s.atoms.firstOrNull { it.id in ids && it.isFunGroupConnector }
+    s.atoms.removeAll { it.id in ids }
+    s.bonds.removeAll { it.atom1 in ids || it.atom2 in ids }
+    if (conn != null) {
+        s.annotations.removeAll {
+            it.type == AnnotationType.FUNC_GROUP && it.text == label &&
+                abs(it.x - conn.x) < 5f && abs(it.y - conn.y) < 5f
+        }
+    }
 }
 
 /** 与 atomId 连通的全部原子 id（用于“点一下选中整个分子”） */

@@ -107,6 +107,47 @@ fun runSelfTest(context: Context) {
             log("SELFTEST REPLACE ${if (ok) "PASS" else "FAIL"} ${fg.label.padEnd(8)} members=$added/$expectMembers smiles=${smiles.ifEmpty { "<em>" }} formula=$formula")
         }
 
+        // ── 放置语义：环碳（度数≥2）应挂新连接点；末端碳（度数1）应就地替换 ──
+        fun buildDoc(withTerminal: Boolean): MoleculeDrawState {
+            val st = MoleculeDrawState()
+            var i = 1
+            val cx = 300f; val cy = 300f; val r = BOND_LENGTH
+            for (k in 0 until 6) {
+                val ang = Math.toRadians(60.0 * k)
+                st.atoms.add(MoleculeAtom(i++, cx + r * kotlin.math.cos(ang).toFloat(), cy + r * kotlin.math.sin(ang).toFloat(), Element.C, aromatic = true))
+            }
+            for (k in 0 until 6) st.bonds.add(MoleculeBond(i++, k + 1, (k + 1) % 6 + 1, BondType.AROMATIC))
+            if (withTerminal) {
+                st.atoms.add(MoleculeAtom(i, cx + r * 2f, cy, Element.C))
+                st.bonds.add(MoleculeBond(i + 1, 1, i, BondType.SINGLE))
+            }
+            return st
+        }
+        for (fg in FUNCTIONAL_GROUPS) {
+            // 环碳
+            val s1 = buildDoc(withTerminal = false)
+            val ringAtom = s1.atoms.first { it.id == 1 }
+            val beforeBonds = degreeOf(s1, ringAtom)
+            applyFunctionalGroupAt(s1, fg, ringAtom.x, ringAtom.y, ringAtom)
+            val ringOk = s1.atoms.size == 7 && ringAtom.funGroupLabel == null &&
+                degreeOf(s1, ringAtom) == beforeBonds + 1 &&
+                s1.atoms.count { it.funGroupLabel == fg.label } == 1 &&
+                s1.annotations.any { it.type == AnnotationType.FUNC_GROUP && it.text == fg.label }
+
+            // 末端碳
+            val s2 = buildDoc(withTerminal = true)
+            val term = s2.atoms.first { it.id == 7 }
+            applyFunctionalGroupAt(s2, fg, term.x, term.y, term)
+            val termOk = s2.atoms.size == 7 && term.funGroupLabel == fg.label &&
+                degreeOf(s2, term) == 1 &&
+                s2.atoms.count { it.funGroupLabel == fg.label } == 1 &&
+                s2.annotations.any { it.type == AnnotationType.FUNC_GROUP && it.text == fg.label }
+
+            val ok = ringOk && termOk
+            if (ok) pass++ else fail++
+            log("SELFTEST PLACE ${if (ok) "PASS" else "FAIL"} ${fg.label.padEnd(8)} ring(attach)=$ringOk term(replace)=$termOk atoms=${s1.atoms.size}/${s2.atoms.size}")
+        }
+
         log("SELFTEST SUMMARY pass=$pass fail=$fail")
     } catch (e: Exception) {
         log("SELFTEST EXCEPTION ${e::class.simpleName}: ${e.message}")

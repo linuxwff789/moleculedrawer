@@ -35,7 +35,9 @@ fun bondLengthScale(atoms: List<MoleculeAtom>, bonds: List<MoleculeBond>): Float
 
 /** 查找距离pos最近的原子（排除官能团组内原子），如果小于HIT_THRESHOLD则返回 */
 fun hitAtom(atoms: List<MoleculeAtom>, pos: Offset): MoleculeAtom? =
-    atoms.filter { it.funGroupLabel == null } // 排除官能团组内原子（不可交互）
+    // 缩写原子（funGroupLabel + 连接点）是真实原子，必须可选、可擦、可再替换；
+    // 只有旧模型残留的"隐形成员"才不可交互
+    atoms.filter { it.funGroupLabel == null || it.isFunGroupConnector }
         .minByOrNull { val d = it.x - pos.x; val e = it.y - pos.y; d*d + e*e }
         ?.takeIf { sqrt((it.x-pos.x)*(it.x-pos.x) + (it.y-pos.y)*(it.y-pos.y)) < HIT_THRESHOLD }
 

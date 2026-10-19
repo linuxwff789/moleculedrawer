@@ -247,6 +247,14 @@ fun MoleculeDrawApp(
         }
     }
 
+    // 切到别的工具就退出"放置官能团"模式，避免回到原子工具时误放
+    LaunchedEffect(s.tool) {
+        if (s.tool != DrawTool.ATOM) {
+            s.isFuncGroupDragMode = false
+            s.selectedFuncGroup = null
+        }
+    }
+
     // 启动时至少有一个文档
     LaunchedEffect(Unit) {
         if (docs.isEmpty()) {

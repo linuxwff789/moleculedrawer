@@ -68,6 +68,10 @@ class MoleculeDrawActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // 绘制风格（经典 / 专业）是全局偏好，启动时恢复
         DrawStyleState.load(this)
+        // 无界面自测：am start ... --es moldraw_selftest 1 → 结果写 logcat(SELFTEST) 和 filesDir/selftest.txt
+        if (intent?.hasExtra("moldraw_selftest") == true) {
+            Thread { runSelfTest(this) }.start()
+        }
         // 沉浸模式：内容铺满全屏（含状态栏/导航栏区域），系统栏从边缘滑动临时唤出
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
         val bars = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)

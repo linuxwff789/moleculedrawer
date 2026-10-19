@@ -1124,16 +1124,21 @@ val dx = wp.x - s.moveStartOffset.x; val dy = wp.y - s.moveStartOffset.y
                             } },
                             onDragEnd = { when (s.tool) {
                                 DrawTool.ATOM -> {
-        if (s.isFuncGroupDragMode && s.selectedFuncGroup != null && s.dragSrc != null) {
-            s.atoms.find { it.id == s.dragSrc }?.let { target ->
-                applyFunctionalGroupAt(s, s.selectedFuncGroup!!, target.x, target.y, target)
-            }
-        }
-        s.isFuncGroupDragMode = false; s.selectedFuncGroup = null; s.isDragging = false; s.dragSrc = null; s.magnifierPos = null
-    } else if (s.isDragging) {
-        if (s.dragSrc != null) s.atoms.find { it.id == s.dragSrc }?.let { it.element = s.selElem }; s.isDragging = false; s.dragSrc = null; s.magnifierPos = null
-    } else { s.magnifierPos = null }
-}
+                                    if (s.isFuncGroupDragMode && s.selectedFuncGroup != null && s.dragSrc != null) {
+                                        s.atoms.find { it.id == s.dragSrc }?.let { target ->
+                                            applyFunctionalGroupAt(s, s.selectedFuncGroup!!, target.x, target.y, target)
+                                        }
+                                        s.isFuncGroupDragMode = false; s.selectedFuncGroup = null
+                                        s.isDragging = false; s.dragSrc = null; s.magnifierPos = null
+                                    } else if (s.isDragging) {
+                                        if (s.dragSrc != null) {
+                                            s.atoms.find { it.id == s.dragSrc }?.let { it.element = s.selElem }
+                                        }
+                                        s.isDragging = false; s.dragSrc = null; s.magnifierPos = null
+                                    } else {
+                                        s.magnifierPos = null
+                                    }
+                                }
                                 DrawTool.BOND -> { 
                                     if (s.extendMode && s.bondFirstAtom != null) {
                                         // 延长模式松手：从吸附的第一个原子延长

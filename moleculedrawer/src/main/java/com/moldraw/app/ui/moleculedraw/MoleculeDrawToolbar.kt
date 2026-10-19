@@ -222,9 +222,35 @@ fun MoleculeContextBar(
                         icon = { Icon(Icons.Default.ShortText, null, modifier = Modifier.size(14.dp)) }
                     )
                     DropdownMenu(expanded = s.showFgMenu, onDismissRequest = { s.showFgMenu = false }) {
-                        FUNCTIONAL_GROUPS.forEach { fg ->
+                        FUNCTIONAL_GROUPS.forEachIndexed { index, fg ->
+                            if (fg.category.isNotEmpty() &&
+                                (index == 0 || FUNCTIONAL_GROUPS[index - 1].category != fg.category)
+                            ) {
+                                Text(
+                                    fg.category,
+                                    fontSize = 10.sp,
+                                    color = SubTextColor,
+                                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 2.dp)
+                                )
+                            }
                             DropdownMenuItem(
-                                text = { Text("${fg.name} (${fg.label})", fontSize = 12.sp) },
+                                text = {
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(fg.name, fontSize = 12.5.sp)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                fg.label,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium,
+                                                color = ToolSelectedFg
+                                            )
+                                        }
+                                        if (fg.formula.isNotEmpty()) {
+                                            Text(fg.formula, fontSize = 10.sp, color = SubTextColor)
+                                        }
+                                    }
+                                },
                                 onClick = {
                                     s.showFgMenu = false
                                     s.selectedFuncGroup = fg

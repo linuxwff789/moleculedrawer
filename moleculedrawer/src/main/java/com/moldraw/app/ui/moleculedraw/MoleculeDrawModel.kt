@@ -718,7 +718,11 @@ data class FunctionalGroup(
     val name: String,
     val label: String,
     val expandAtoms: List<Pair<String, BondType>>, // (元素符号, 与连接点之间的键型)
-    val connectIndex: Int = 0
+    val connectIndex: Int = 0,
+    /** 完整展开式（菜单里显示的缩写对照，如 –C(=O)OH） */
+    val formula: String = "",
+    /** 菜单分组标题 */
+    val category: String = ""
 )
 
 /**
@@ -727,17 +731,12 @@ data class FunctionalGroup(
  * 生成 SMILES / 导出 Mol 时通过 [expandFunctionalGroups] 展开为实际原子。
  */
 val FUNCTIONAL_GROUPS = listOf(
-    FunctionalGroup("硝基", "NO₂", listOf(
-        "N" to BondType.SINGLE,
-        "O" to BondType.DOUBLE,
-        "O" to BondType.DOUBLE
-    )),
     FunctionalGroup("甲基", "CH₃", listOf(
         "C" to BondType.SINGLE,
         "H" to BondType.SINGLE,
         "H" to BondType.SINGLE,
         "H" to BondType.SINGLE
-    )),
+    ), formula = "–CH₃", category = "烃基"),
     FunctionalGroup("乙基", "C₂H₅", listOf(
         "C" to BondType.SINGLE,
         "C" to BondType.SINGLE,
@@ -746,26 +745,18 @@ val FUNCTIONAL_GROUPS = listOf(
         "H" to BondType.SINGLE,
         "H" to BondType.SINGLE,
         "H" to BondType.SINGLE
-    )),
-    FunctionalGroup("羟基", "OH", listOf(
-        "O" to BondType.SINGLE,
-        "H" to BondType.SINGLE
-    )),
-    FunctionalGroup("羰基", "C=O", listOf(
+    ), formula = "–CH₂CH₃", category = "烃基"),
+    FunctionalGroup("异丙基", "i-Pr", listOf(
         "C" to BondType.SINGLE,
-        "O" to BondType.DOUBLE
-    )),
-    FunctionalGroup("羧基", "COOH", listOf(
         "C" to BondType.SINGLE,
-        "O" to BondType.DOUBLE,
-        "O" to BondType.SINGLE,
-        "H" to BondType.SINGLE
-    )),
-    FunctionalGroup("氨基", "NH₂", listOf(
-        "N" to BondType.SINGLE,
-        "H" to BondType.SINGLE,
-        "H" to BondType.SINGLE
-    )),
+        "C" to BondType.SINGLE
+    ), formula = "–CH(CH₃)₂", category = "烃基"),
+    FunctionalGroup("叔丁基", "t-Bu", listOf(
+        "C" to BondType.SINGLE,
+        "C" to BondType.SINGLE,
+        "C" to BondType.SINGLE,
+        "C" to BondType.SINGLE
+    ), formula = "–C(CH₃)₃", category = "烃基"),
     FunctionalGroup("苯基", "Ph", listOf(
         "C" to BondType.AROMATIC,
         "C" to BondType.AROMATIC,
@@ -773,23 +764,102 @@ val FUNCTIONAL_GROUPS = listOf(
         "C" to BondType.AROMATIC,
         "C" to BondType.AROMATIC,
         "C" to BondType.AROMATIC
-    )),
+    ), formula = "–C₆H₅", category = "烃基"),
+    FunctionalGroup("氟代", "F", listOf(
+        "F" to BondType.SINGLE
+    ), formula = "–F", category = "卤素"),
+    FunctionalGroup("氯代", "Cl", listOf(
+        "Cl" to BondType.SINGLE
+    ), formula = "–Cl", category = "卤素"),
+    FunctionalGroup("溴代", "Br", listOf(
+        "Br" to BondType.SINGLE
+    ), formula = "–Br", category = "卤素"),
+    FunctionalGroup("碘代", "I", listOf(
+        "I" to BondType.SINGLE
+    ), formula = "–I", category = "卤素"),
+    FunctionalGroup("三氟甲基", "CF₃", listOf(
+        "C" to BondType.SINGLE,
+        "F" to BondType.SINGLE,
+        "F" to BondType.SINGLE,
+        "F" to BondType.SINGLE
+    ), formula = "–CF₃", category = "卤素"),
+    FunctionalGroup("羟基", "OH", listOf(
+        "O" to BondType.SINGLE,
+        "H" to BondType.SINGLE
+    ), formula = "–OH", category = "含氧"),
+    FunctionalGroup("甲氧基", "OCH₃", listOf(
+        "O" to BondType.SINGLE,
+        "C" to BondType.SINGLE
+    ), formula = "–OCH₃", category = "含氧"),
+    FunctionalGroup("羰基", "C=O", listOf(
+        "C" to BondType.SINGLE,
+        "O" to BondType.DOUBLE
+    ), formula = "–C(=O)–", category = "含氧"),
     FunctionalGroup("醛基", "CHO", listOf(
         "C" to BondType.SINGLE,
         "O" to BondType.DOUBLE,
         "H" to BondType.SINGLE
-    )),
+    ), formula = "–CHO", category = "含氧"),
+    FunctionalGroup("乙酰基", "COCH₃", listOf(
+        "C" to BondType.SINGLE,
+        "O" to BondType.DOUBLE,
+        "C" to BondType.SINGLE
+    ), formula = "–C(=O)CH₃", category = "含氧"),
+    FunctionalGroup("羧基", "COOH", listOf(
+        "C" to BondType.SINGLE,
+        "O" to BondType.DOUBLE,
+        "O" to BondType.SINGLE,
+        "H" to BondType.SINGLE
+    ), formula = "–C(=O)OH", category = "含氧"),
+    FunctionalGroup("氨基", "NH₂", listOf(
+        "N" to BondType.SINGLE,
+        "H" to BondType.SINGLE,
+        "H" to BondType.SINGLE
+    ), formula = "–NH₂", category = "含氮"),
+    FunctionalGroup("硝基", "NO₂", listOf(
+        "N" to BondType.SINGLE,
+        "O" to BondType.DOUBLE,
+        "O" to BondType.DOUBLE
+    ), formula = "–NO₂", category = "含氮"),
+    FunctionalGroup("亚硝基", "NO", listOf(
+        "N" to BondType.SINGLE,
+        "O" to BondType.DOUBLE
+    ), formula = "–N=O", category = "含氮"),
+    FunctionalGroup("氰基", "CN", listOf(
+        "C" to BondType.SINGLE,
+        "N" to BondType.TRIPLE
+    ), formula = "–C≡N", category = "含氮"),
+    FunctionalGroup("酰胺", "CONH₂", listOf(
+        "C" to BondType.SINGLE,
+        "O" to BondType.DOUBLE,
+        "N" to BondType.SINGLE
+    ), formula = "–C(=O)NH₂", category = "含氮"),
+    FunctionalGroup("巯基", "SH", listOf(
+        "S" to BondType.SINGLE,
+        "H" to BondType.SINGLE
+    ), formula = "–SH", category = "含硫/磷"),
+    FunctionalGroup("甲硫基", "SCH₃", listOf(
+        "S" to BondType.SINGLE,
+        "C" to BondType.SINGLE
+    ), formula = "–SCH₃", category = "含硫/磷"),
+    FunctionalGroup("磺酰基", "SO₂", listOf(
+        "S" to BondType.SINGLE,
+        "O" to BondType.DOUBLE,
+        "O" to BondType.DOUBLE
+    ), formula = "–SO₂–", category = "含硫/磷"),
     FunctionalGroup("磺酸基", "SO₃H", listOf(
         "S" to BondType.SINGLE,
         "O" to BondType.DOUBLE,
         "O" to BondType.DOUBLE,
         "O" to BondType.SINGLE,
         "H" to BondType.SINGLE
-    )),
-    FunctionalGroup("氰基", "CN", listOf(
-        "C" to BondType.SINGLE,
-        "N" to BondType.TRIPLE
-    ))
+    ), formula = "–SO₃H", category = "含硫/磷"),
+    FunctionalGroup("磷酸基", "PO₃H₂", listOf(
+        "P" to BondType.SINGLE,
+        "O" to BondType.DOUBLE,
+        "O" to BondType.SINGLE,
+        "O" to BondType.SINGLE
+    ), formula = "–P(=O)(OH)₂", category = "含硫/磷"),
 )
 
 /**

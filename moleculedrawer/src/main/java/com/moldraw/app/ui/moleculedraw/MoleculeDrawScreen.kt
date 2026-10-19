@@ -1345,8 +1345,9 @@ internal fun applyFunctionalGroupAt(
     x: Float, y: Float,
     anchor: MoleculeAtom?
 ) {
-    // ── 1. 先清掉 anchor 上原有的官能团（连接点 + 组内成员 + 标注），避免隐形残留 ──
-    if (anchor != null) {
+    // ── 1. 清掉 anchor 上"旧模型"残留（挂在旁边的连接点 + 成员 + 标注）；
+    //     anchor 自己就是基团时不用清，直接覆盖它的 label 即可
+    if (anchor != null && anchor.funGroupLabel == null) {
         val oldConn = s.bonds
             .filter { it.atom1 == anchor.id || it.atom2 == anchor.id }
             .mapNotNull { b -> s.atoms.find { it.id == if (b.atom1 == anchor.id) b.atom2 else b.atom1 } }
@@ -1369,35 +1370,21 @@ internal fun applyFunctionalGroupAt(
         }
     }
 
-    // ── 2. 摆放连接点：从 anchor 已有的键的反方向伸出去，避免和现有键重叠 ──
-    fun dirsFromAtom(a: MoleculeAtom): List<Float> =
-        s.bonds.filter { it.atom1 == a.id || it.atom2 == a.id }.mapNotNull { b ->
-            val oid = if (b.atom1 == a.id) b.atom2 else b.atom1
-            val o = s.atoms.find { it.id == oid } ?: return@mapNotNull null
-            Math.toDegrees(atan2((o.y - a.y).toDouble(), (o.x - a.x).toDouble())).toFloat()
-        }
-    val baseAngle: Float = if (anchor == null) 0f else {
-        val dirs = dirsFromAtom(anchor)
-        if (dirs.isEmpty()) 0f else {
-            val sx = dirs.sumOf { cos(Math.toRadians(it.toDouble())) }
-            val sy = dirs.sumOf { sin(Math.toRadians(it.toDouble())) }
-            if (abs(sx) < 1e-4 && abs(sy) < 1e-4) 0f
-            else Math.toDegrees(atan2(-sy, -sx)).toFloat()
-        }
-    }
     val connElem = Element.fromSymbol(fg.expandAtoms[fg.connectIndex].first)
     val cx: Float; val cy: Float
-    if (anchor == null) {
-        cx = x; cy = y
+    if (anchor != null) {
+        // ★ 替换语义：点中的原子就地变成基团的连接点（保留它的全部原有键），
+        //   不新建原子、也不删除重建 —— 环和链结构完全不动
+        anchor.element = connElem
+        anchor.funGroupLabel = fg.label
+        anchor.isFunGroupConnector = true
+        cx = anchor.x; cy = anchor.y
     } else {
-        val rad = Math.toRadians(baseAngle.toDouble())
-        cx = anchor.x + BOND_LENGTH * cos(rad).toFloat()
-        cy = anchor.y + BOND_LENGTH * sin(rad).toFloat()
+        cx = x; cy = y
+        val connAtom = MoleculeAtom(nextId(), cx, cy, connElem,
+            funGroupLabel = fg.label, isFunGroupConnector = true)
+        s.atoms.add(connAtom)
     }
-    val connAtom = MoleculeAtom(nextId(), cx, cy, connElem,
-        funGroupLabel = fg.label, isFunGroupConnector = true)
-    s.atoms.add(connAtom)
-    if (anchor != null) s.bonds.add(MoleculeBond(nextId(), anchor.id, connAtom.id, BondType.SINGLE))
 
     // ── 3. 缩写是"单原子"模型（与 ChemDraw / Ketcher 的 abbreviation 一致）：
     //        文档里只保留连接点这一个原子，成员不落库；需要 SMILES / 分子量时再按定义展开。
@@ -1439,16 +1426,14 @@ internal fun resolveGroupAnchor(s: MoleculeDrawState, wp: Offset): MoleculeAtom?
         ?.takeIf { a -> sqrt((a.x - wp.x) * (a.x - wp.x) + (a.y - wp.y) * (a.y - wp.y)) < HIT_THRESHOLD * 1.6f }
         ?: return null
     if (near.funGroupLabel == null) return near
+    // 已经是缩写原子：再点一次就是"换一个基团"，直接替换它自己
+    if (near.isFunGroupConnector) return near
+    // 旧模型残留的成员原子：回到它所属的连接点
     fun other(b: MoleculeBond, id: Int) = s.atoms.find { it.id == if (b.atom1 == id) b.atom2 else b.atom1 }
-    val conn = if (near.isFunGroupConnector) near else s.bonds
+    return s.bonds
         .filter { it.atom1 == near.id || it.atom2 == near.id }
         .mapNotNull { b -> other(b, near.id) }
         .firstOrNull { it.isFunGroupConnector && it.funGroupLabel == near.funGroupLabel }
-        ?: return null
-    return s.bonds
-        .filter { it.atom1 == conn.id || it.atom2 == conn.id }
-        .mapNotNull { b -> other(b, conn.id) }
-        .firstOrNull { it.funGroupLabel == null }
 }
 
 /**

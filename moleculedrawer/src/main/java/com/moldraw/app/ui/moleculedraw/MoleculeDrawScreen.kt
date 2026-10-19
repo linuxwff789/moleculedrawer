@@ -808,18 +808,20 @@ if (s.showSaveDialog) {
                         } }
                         .pointerInput(s.tool, s.selElem, s.selBond, s.ringType, s.selectedIds, s.extendMode) { 
         detectTapGestures { pos -> when (s.tool) {
-                            DrawTool.ATOM -> { if (s.isFuncGroupDragMode && s.selectedFuncGroup != null) {
-                                s.pushUndo()
-                                val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY)
-                                val hit = hitAtom(s.atoms, wp)
-                                android.util.Log.d("MOLDRAW_DEBUG", "[FG] tap place ${s.selectedFuncGroup?.label} hit=${hit?.id}")
-                                applyFunctionalGroupAt(s, s.selectedFuncGroup!!, if (hit != null) hit.x else wp.x, if (hit != null) hit.y else wp.y, hit)
-                                // 保持放置模式，可以连续点多个原子；退出靠再点一次"缩写"按钮
-                                return@detectTapGestures
+                            DrawTool.ATOM -> {
+                                if (s.isFuncGroupDragMode && s.selectedFuncGroup != null) {
+                                    s.pushUndo()
+                                    val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY)
+                                    val hit = resolveGroupAnchor(s, wp)
+                                    android.util.Log.d("MOLDRAW_DEBUG", "[FG] tap place ${s.selectedFuncGroup?.label} anchor=${hit?.id} at=(${wp.x},${wp.y})")
+                                    applyFunctionalGroupAt(s, s.selectedFuncGroup!!, if (hit != null) hit.x else wp.x, if (hit != null) hit.y else wp.y, hit)
+                                    // 保持放置模式，可以连续点多个原子；退出靠再点一次"缩写"按钮
+                                } else {
+                                    s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); hitAtom(s.atoms, wp)?.let { hit ->
+                                        val existing = s.bonds.filter { b -> b.atom1 == hit.id || b.atom2 == hit.id }; val angle = if (existing.isNotEmpty()) { val d = existing.firstNotNullOfOrNull { b -> val o = if (b.atom1 == hit.id) s.atoms.find { it.id == b.atom2 } else s.atoms.find { it.id == b.atom1 }; o?.let { atan2(it.y - hit.y, it.x - hit.x) } }; snapAngle(Math.toDegrees((d ?: 0.0).toDouble()).toFloat() + 120f) } else 0f; val rad = Math.toRadians(angle.toDouble()); s.atoms.add(MoleculeAtom(nextId(), hit.x + BOND_LENGTH * cos(rad).toFloat(), hit.y + BOND_LENGTH * sin(rad).toFloat(), s.selElem)); val lid = s.atoms.last().id; if (!s.bonds.any { (it.atom1 == hit.id && it.atom2 == lid) || (it.atom1 == lid && it.atom2 == hit.id) }) s.bonds.add(MoleculeBond(nextId(), hit.id, lid))
+                                    } ?: run { val m = findMergeAtom(s.atoms, wp); if (m != null) m.element = s.selElem else s.atoms.add(MoleculeAtom(nextId(), wp.x, wp.y, s.selElem)) }
+                                }
                             }
-                            s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); hitAtom(s.atoms, wp)?.let { hit ->
-                                val existing = s.bonds.filter { b -> b.atom1 == hit.id || b.atom2 == hit.id }; val angle = if (existing.isNotEmpty()) { val d = existing.firstNotNullOfOrNull { b -> val o = if (b.atom1 == hit.id) s.atoms.find { it.id == b.atom2 } else s.atoms.find { it.id == b.atom1 }; o?.let { atan2(it.y - hit.y, it.x - hit.x) } }; snapAngle(Math.toDegrees((d ?: 0.0).toDouble()).toFloat() + 120f) } else 0f; val rad = Math.toRadians(angle.toDouble()); s.atoms.add(MoleculeAtom(nextId(), hit.x + BOND_LENGTH * cos(rad).toFloat(), hit.y + BOND_LENGTH * sin(rad).toFloat(), s.selElem)); val lid = s.atoms.last().id; if (!s.bonds.any { (it.atom1 == hit.id && it.atom2 == lid) || (it.atom1 == lid && it.atom2 == hit.id) }) s.bonds.add(MoleculeBond(nextId(), hit.id, lid))
-                            } ?: run { val m = findMergeAtom(s.atoms, wp); if (m != null) m.element = s.selElem else s.atoms.add(MoleculeAtom(nextId(), wp.x, wp.y, s.selElem)) } }
                             DrawTool.RING -> { s.pushUndo(); s.magnifierPos = pos; placeRing(s.atoms, s.bonds, pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY, s.ringType.n, s.ringType.benzene, benzeneStyle = s.benzeneStyle); MainScope().launch { delay(600); s.magnifierPos = null } }
                             DrawTool.BOND -> {
                                 if (s.extendMode) {
@@ -1126,8 +1128,10 @@ val dx = wp.x - s.moveStartOffset.x; val dy = wp.y - s.moveStartOffset.y
                             onDragEnd = { when (s.tool) {
                                 DrawTool.ATOM -> {
                                     if (s.isFuncGroupDragMode && s.selectedFuncGroup != null && s.dragSrc != null) {
-                                        s.atoms.find { it.id == s.dragSrc }?.let { target ->
-                                            android.util.Log.d("MOLDRAW_DEBUG", "[FG] drag place ${s.selectedFuncGroup?.label} at ${target.id}")
+                                        val raw = s.atoms.find { it.id == s.dragSrc }
+                                        val target = if (raw != null) resolveGroupAnchor(s, Offset(raw.x, raw.y)) else null
+                                        android.util.Log.d("MOLDRAW_DEBUG", "[FG] drag place ${s.selectedFuncGroup?.label} raw=${raw?.id} anchor=${target?.id}")
+                                        if (target != null) {
                                             applyFunctionalGroupAt(s, s.selectedFuncGroup!!, target.x, target.y, target)
                                         }
                                         s.isDragging = false; s.dragSrc = null; s.magnifierPos = null
@@ -1420,6 +1424,28 @@ internal fun applyFunctionalGroupAt(
 
     // ── 4. 缩写标注落在连接点上 ──
     s.annotations.add(MoleculeAnnotation(nextId(), AnnotationType.FUNC_GROUP, cx, cy, text = fg.label))
+}
+
+/**
+ * 放置官能团时的目标原子。
+ * 命中普通原子 → 直接用它；点在已有基团上（连接点或成员都不可交互）→ 换成该基团挂着的骨架原子，
+ * 这样在旧基团上再点一次是"替换"，而不是在旁边多长一个碳。
+ */
+internal fun resolveGroupAnchor(s: MoleculeDrawState, wp: Offset): MoleculeAtom? {
+    val near = s.atoms.minByOrNull { a -> (a.x - wp.x) * (a.x - wp.x) + (a.y - wp.y) * (a.y - wp.y) }
+        ?.takeIf { a -> sqrt((a.x - wp.x) * (a.x - wp.x) + (a.y - wp.y) * (a.y - wp.y)) < HIT_THRESHOLD * 1.6f }
+        ?: return null
+    if (near.funGroupLabel == null) return near
+    fun other(b: MoleculeBond, id: Int) = s.atoms.find { it.id == if (b.atom1 == id) b.atom2 else b.atom1 }
+    val conn = if (near.isFunGroupConnector) near else s.bonds
+        .filter { it.atom1 == near.id || it.atom2 == near.id }
+        .mapNotNull { b -> other(b, near.id) }
+        .firstOrNull { it.isFunGroupConnector && it.funGroupLabel == near.funGroupLabel }
+        ?: return null
+    return s.bonds
+        .filter { it.atom1 == conn.id || it.atom2 == conn.id }
+        .mapNotNull { b -> other(b, conn.id) }
+        .firstOrNull { it.funGroupLabel == null }
 }
 
 /**

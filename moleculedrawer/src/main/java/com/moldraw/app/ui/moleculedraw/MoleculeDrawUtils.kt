@@ -529,11 +529,13 @@ fun autoFit(
                                     val nbrAtoms = nbBonds.mapNotNull { nb ->
                                         atomById[if (nb.atom1 == cand.id) nb.atom2 else nb.atom1]
                                     }.filter { it.id !in used }
-                                    val pool = nbrAtoms.filter { it.element in memberElems }
-                                    val have = pool.groupingBy { it.element }.eachCount()
-                                    // 成员元素计数必须完全一致：多一个 O 的硝基不能被当成亚硝基
+                                    // 成员必须是一价叶子（只连着连接点）。叔丁基 / 异丙基的成员也是碳，
+                                    // 不区分的话环上三配位碳会被当成叔丁基中心，把环原子错标成隐形成员
+                                    val leaves = nbrAtoms.filter { (adj[it.id]?.size ?: 0) == 1 }
+                                    val chosen = leaves.filter { it.element in memberElems }
+                                    val have = chosen.groupingBy { it.element }.eachCount()
+                                    // 成员元素计数必须完全一致：多一个 O 的硝基不会被当成亚硝基
                                     if (have != need) continue
-                                    val chosen = pool
                                     // 剩下的邻居才是"对外键"
                                     val external = nbrAtoms.count { it !in chosen }
                                     if (external > 1) continue

@@ -191,6 +191,7 @@ fun MoleculeDrawApp(
     var activeDocId by remember { mutableStateOf(0L) }
     var docSeq by remember { mutableStateOf(1L) }
     var showDocSheet by remember { mutableStateOf(false) }
+    var showAbout by remember { mutableStateOf(false) }
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     fun snapshotActiveDoc() {
@@ -576,6 +577,10 @@ if (s.showSaveDialog) {
         }
     }
 
+    if (showAbout) {
+        AboutSheet(onDismiss = { showAbout = false })
+    }
+
     // 打开的文档列表
     if (showDocSheet) {
         ModalBottomSheet(onDismissRequest = { showDocSheet = false }) {
@@ -742,6 +747,12 @@ if (s.showSaveDialog) {
                                 }
                             )
                         }
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("关于", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.Info, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; showAbout = true }
+                        )
                     }
                 }
     }

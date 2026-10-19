@@ -553,7 +553,7 @@ if (s.showSaveDialog) {
         if (!s.showMolecularWeight) {
             s.annotations.removeAll { it.role?.startsWith(MW_ROLE_PREFIX) == true }
         } else {
-            val labels = withContext(Dispatchers.Default) { computeMwLabels(s.atoms.toList(), s.bonds.toList(), layoutEngine) }
+            val labels = withContext(Dispatchers.Default) { computeMwLabels(s.atoms.toList(), s.bonds.toList(), s.annotations.toList(), layoutEngine) }
             // 已经不存在的分子：删掉它的标注
             s.annotations.removeAll { ann ->
                 val r = ann.role ?: return@removeAll false
@@ -1381,6 +1381,14 @@ internal fun applyFunctionalGroupAt(
     val connElem = Element.fromSymbol(fg.expandAtoms[fg.connectIndex].first)
     val cx: Float; val cy: Float
     if (anchor != null) {
+        // 原来就有缩写：先把旧标注去掉，否则新旧两条标注会叠在同一位置
+        val oldLabel = anchor.funGroupLabel
+        if (oldLabel != null) {
+            s.annotations.removeAll {
+                it.type == AnnotationType.FUNC_GROUP && it.text == oldLabel &&
+                    abs(it.x - anchor.x) < 5f && abs(it.y - anchor.y) < 5f
+            }
+        }
         // ★ 替换语义：点中的原子就地变成基团的连接点（保留它的全部原有键），
         //   不新建原子、也不删除重建 —— 环和链结构完全不动
         anchor.element = connElem
@@ -1495,20 +1503,26 @@ private fun connectedAtomIds(atoms: List<MoleculeAtom>, bonds: List<MoleculeBond
 private fun computeMwLabels(
     atoms: List<MoleculeAtom>,
     bonds: List<MoleculeBond>,
+    annotations: List<MoleculeAnnotation>,
     layoutEngine: MoleculeLayoutEngine?
 ): Map<String, String> {
     val engine = layoutEngine as? IndigoNativeLayoutEngineAdapter ?: return emptyMap()
     val out = LinkedHashMap<String, String>()
     val visited = mutableSetOf<Int>()
     for (a in atoms) {
-        if (a.funGroupLabel != null || !visited.add(a.id)) continue
+        if (!visited.add(a.id)) continue  // 缩写原子也是分子的一部分（含单独的基团）
         val comp = connectedAtomIds(atoms, bonds, a.id)
         visited.addAll(comp)
         val compAtoms = atoms.filter { it.id in comp }
         val compBonds = bonds.filter { it.atom1 in comp && it.atom2 in comp }
         // 孤立原子（没有任何键）不算一个分子：既不该标分子量，也不该被当成 CH4
         if (compBonds.isEmpty()) continue
-        val smiles = runCatching { engine.generateSmiles(compAtoms, compBonds) }.getOrNull().orEmpty()
+        // 这个片段里的缩写标注要一起传，否则 NO₂ / COOH 会被当成裸 N / 裸 C 算分子量
+        val compAnns = annotations.filter { ann ->
+            ann.type == AnnotationType.FUNC_GROUP &&
+                compAtoms.any { it.funGroupLabel == ann.text && it.isFunGroupConnector }
+        }
+        val smiles = runCatching { engine.generateSmiles(compAtoms, compBonds, compAnns) }.getOrNull().orEmpty()
         if (smiles.isBlank()) continue
         val formula = runCatching { IndigoNative.grossFormula(smiles) }.getOrDefault("")
         val mw = runCatching { IndigoNative.molecularWeight(smiles) }.getOrDefault(0.0)

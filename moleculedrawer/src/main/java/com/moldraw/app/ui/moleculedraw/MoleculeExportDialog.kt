@@ -58,7 +58,14 @@ fun MoleculeExportDialog(
         } else ""
     }
     val d = remember(atomsSize, bondsSize) { MoleculeData(atoms.toList(), bonds.toList(), annotations.toList(), benzeneStyle = benzeneStyle) }
-    val molStr = remember(d) { d.toMol() }
+    val molStr = remember(d) {
+        // 导出 Molfile 时把缩写展开成真实原子：V2000 没有缩写语义，
+        // 直接写会让 CH₃ 变成裸碳、NO₂ 变成裸氮（分子式/分子量都不对）
+        runCatching {
+            val (ea, eb) = expandFunctionalGroups(d.atoms, d.bonds, d.annotations)
+            MoleculeData(ea, eb, d.annotations.filter { it.type != AnnotationType.FUNC_GROUP }).toMol()
+        }.getOrDefault(d.toMol())
+    }
     val svgStr = remember(d) { d.toSvg() }
 
     // ── 分子计算 ──
@@ -430,7 +437,7 @@ fun sharePdf(
         if (len < 1f) continue
         val ux = dx/len; val uy = dy/len
         // 组内键（如 N=O）在编辑器里不画，导出也跳过
-        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel) continue
+        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel && !a1.isFunGroupConnector && !a2.isFunGroupConnector) continue
         val eb1 = expLabelBoxes[a1.id]; val eb2 = expLabelBoxes[a2.id]
         val r1 = eb1?.let { ellipseTrim(it.first, it.second, ux, uy) } ?: carbonRadius()
         val r2 = eb2?.let { ellipseTrim(it.first, it.second, -ux, -uy) } ?: carbonRadius()

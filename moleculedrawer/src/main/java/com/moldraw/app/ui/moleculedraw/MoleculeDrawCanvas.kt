@@ -134,7 +134,7 @@ fun DrawScope.drawCanvasContent(
         val a2 = atoms.find { it.id == b.atom2 } ?: continue
         // 跳过官能团组内键（如 N=O 双键），缩写模式下不显示
         // 两个原子属于同一官能团时才跳过（组内键）
-        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel) continue
+        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel && !a1.isFunGroupConnector && !a2.isFunGroupConnector) continue
         // AROMATIC 键不在主循环画，由后面的统一芳香环渲染处理
         if (b.type == BondType.AROMATIC) continue
         drawBond(

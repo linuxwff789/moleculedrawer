@@ -960,7 +960,7 @@ fun shareBitmap(
         if (len < 1f) continue
         val ux = dx/len; val uy = dy/len
         // 组内键（如 N=O）在编辑器里不画，导出也跳过
-        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel) continue
+        if (a1.funGroupLabel != null && a1.funGroupLabel == a2.funGroupLabel && !a1.isFunGroupConnector && !a2.isFunGroupConnector) continue
         val eb1 = expLabelBoxes[a1.id]; val eb2 = expLabelBoxes[a2.id]
         val r1 = eb1?.let { ellipseTrim(it.first, it.second, ux, uy) } ?: carbonRadius()
         val r2 = eb2?.let { ellipseTrim(it.first, it.second, -ux, -uy) } ?: carbonRadius()

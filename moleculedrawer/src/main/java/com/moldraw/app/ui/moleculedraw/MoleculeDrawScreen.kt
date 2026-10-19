@@ -1390,6 +1390,8 @@ private fun computeMwLabels(
         visited.addAll(comp)
         val compAtoms = atoms.filter { it.id in comp }
         val compBonds = bonds.filter { it.atom1 in comp && it.atom2 in comp }
+        // 孤立原子（没有任何键）不算一个分子：既不该标分子量，也不该被当成 CH4
+        if (compBonds.isEmpty()) continue
         val smiles = runCatching { engine.generateSmiles(compAtoms, compBonds) }.getOrNull().orEmpty()
         if (smiles.isBlank()) continue
         val formula = runCatching { IndigoNative.grossFormula(smiles) }.getOrDefault("")

@@ -344,8 +344,10 @@ fun DrawScope.drawAtom(
     // 如果该原子属于 FUNC_GROUP（有 funGroupLabel），跳过绘制（标注文字替代）
     if (a.funGroupLabel != null) return
     if (a.element == Element.C) {
-        // 专业样式不画碳点，键直接交于顶点
-        if (!isProStyle()) drawCircle(Color(0xFF666666), CARBON_DOT_R, c)
+        // 专业样式不画碳点，键直接交于顶点；但孤立碳（没有任何键）必须画出来，
+        // 否则整颗原子隐形：既看不见也点不中，还会被分子量标注单独标成 CH4
+        val isolated = bonds.none { it.atom1 == a.id || it.atom2 == a.id }
+        if (!isProStyle() || isolated) drawCircle(Color(0xFF666666), CARBON_DOT_R, c)
     } else {
         val symbol = a.element.symbol
         val hCount = calcImplicitH(a, bonds)

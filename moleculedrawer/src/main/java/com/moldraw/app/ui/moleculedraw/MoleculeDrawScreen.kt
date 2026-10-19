@@ -1351,6 +1351,18 @@ private fun TopAction(
  *  - 连接点与成员都打上 funGroupLabel（渲染时隐藏），另加一条 FUNC_GROUP 标注显示缩写。
  * 这样环碳上挂 COOH / CH₃ / NO₂ 都不会破坏环，自动调整后拓扑也能匹配回来。
  */
+/** 原子的度数（连了几根键） */
+internal fun degreeOf(s: MoleculeDrawState, a: MoleculeAtom): Int =
+    s.bonds.count { it.atom1 == a.id || it.atom2 == a.id }
+
+/** 从该原子出发的所有键方向（角度，度） */
+internal fun dirsFromAtom(s: MoleculeDrawState, a: MoleculeAtom): List<Float> =
+    s.bonds.filter { it.atom1 == a.id || it.atom2 == a.id }.mapNotNull { b ->
+        val oid = if (b.atom1 == a.id) b.atom2 else b.atom1
+        val o = s.atoms.find { it.id == oid } ?: return@mapNotNull null
+        Math.toDegrees(atan2((o.y - a.y).toDouble(), (o.x - a.x).toDouble())).toFloat()
+    }
+
 internal fun applyFunctionalGroupAt(
     s: MoleculeDrawState,
     fg: FunctionalGroup,
@@ -1384,21 +1396,39 @@ internal fun applyFunctionalGroupAt(
 
     val connElem = Element.fromSymbol(fg.expandAtoms[fg.connectIndex].first)
     val cx: Float; val cy: Float
-    if (anchor != null) {
-        // 原来就有缩写：先把旧标注去掉，否则新旧两条标注会叠在同一位置
-        val oldLabel = anchor.funGroupLabel
-        if (oldLabel != null) {
-            s.annotations.removeAll {
-                it.type == AnnotationType.FUNC_GROUP && it.text == oldLabel &&
-                    abs(it.x - anchor.x) < 5f && abs(it.y - anchor.y) < 5f
-            }
+    if (anchor != null && anchor.funGroupLabel != null) {
+        // 这个原子已经是缩写：换一个基团 = 覆盖它自己的标记
+        s.annotations.removeAll {
+            it.type == AnnotationType.FUNC_GROUP && it.text == anchor.funGroupLabel &&
+                abs(it.x - anchor.x) < 5f && abs(it.y - anchor.y) < 5f
         }
-        // ★ 替换语义：点中的原子就地变成基团的连接点（保留它的全部原有键），
-        //   不新建原子、也不删除重建 —— 环和链结构完全不动
         anchor.element = connElem
         anchor.funGroupLabel = fg.label
         anchor.isFunGroupConnector = true
         cx = anchor.x; cy = anchor.y
+    } else if (anchor != null && degreeOf(s, anchor) <= 1) {
+        // 末端原子（只有一根键，或孤立）：它就是基团该在的位置 → 原地替换，键全部保留
+        anchor.element = connElem
+        anchor.funGroupLabel = fg.label
+        anchor.isFunGroupConnector = true
+        cx = anchor.x; cy = anchor.y
+    } else if (anchor != null) {
+        // 环上 / 链中间的原子：它是骨架的一部分，不能被基团顶替
+        // → 在它的空位上挂一个新的连接点原子，再打标记
+        val dirs = dirsFromAtom(s, anchor)
+        val base = if (dirs.isEmpty()) 0f else {
+            val sx = dirs.sumOf { cos(Math.toRadians(it.toDouble())) }
+            val sy = dirs.sumOf { sin(Math.toRadians(it.toDouble())) }
+            if (abs(sx) < 1e-4 && abs(sy) < 1e-4) 0f
+            else Math.toDegrees(atan2(-sy, -sx)).toFloat()
+        }
+        val rad = Math.toRadians(base.toDouble())
+        cx = anchor.x + BOND_LENGTH * cos(rad).toFloat()
+        cy = anchor.y + BOND_LENGTH * sin(rad).toFloat()
+        val connAtom = MoleculeAtom(nextId(), cx, cy, connElem,
+            funGroupLabel = fg.label, isFunGroupConnector = true)
+        s.atoms.add(connAtom)
+        s.bonds.add(MoleculeBond(nextId(), anchor.id, connAtom.id, BondType.SINGLE))
     } else {
         cx = x; cy = y
         val connAtom = MoleculeAtom(nextId(), cx, cy, connElem,

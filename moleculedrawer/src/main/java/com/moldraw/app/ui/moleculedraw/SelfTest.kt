@@ -74,6 +74,39 @@ fun runSelfTest(context: Context) {
                     "smiles=${smiles.ifEmpty { "<em>" }} formula=$formula aliasAfterFit=$aliasAfter annAfterFit=$annAfter atoms=${a2.size}"
             )
         }
+        // ── 替换路径：苯环上挂一个末端碳（模拟甲苯的甲基），把该碳换成各个基团 ──
+        for (fg in FUNCTIONAL_GROUPS) {
+            val connElem = Element.fromSymbol(fg.expandAtoms[fg.connectIndex].first)
+            val atoms = mutableListOf<MoleculeAtom>()
+            val bonds = mutableListOf<MoleculeBond>()
+            var id = 1
+            val cx = 300f; val cy = 300f; val r = BOND_LENGTH
+            for (i in 0 until 6) {
+                val ang = Math.toRadians(60.0 * i)
+                atoms.add(MoleculeAtom(id++, cx + r * kotlin.math.cos(ang).toFloat(), cy + r * kotlin.math.sin(ang).toFloat(), Element.C, aromatic = true))
+            }
+            for (i in 0 until 6) bonds.add(MoleculeBond(id++, i + 1, (i + 1) % 6 + 1, BondType.AROMATIC))
+            val methylId = id
+            atoms.add(MoleculeAtom(methylId, cx + r * 2f, cy, Element.C))
+            bonds.add(MoleculeBond(id++, 1, methylId, BondType.SINGLE))
+            // 替换：末端碳就地变成基团连接点
+            atoms.first { it.id == methylId }.apply {
+                element = connElem; funGroupLabel = fg.label; isFunGroupConnector = true
+            }
+            val anns = mutableListOf(MoleculeAnnotation(id++, AnnotationType.FUNC_GROUP, cx + r * 2f, cy, text = fg.label))
+
+            val expectMembers = fg.expandAtoms
+                .filterIndexed { i, _ -> i != fg.connectIndex }
+                .count { Element.fromSymbol(it.first) != Element.H }
+            val (expAtoms, _) = expandFunctionalGroups(atoms, bonds, anns)
+            val added = expAtoms.size - atoms.size
+            val smiles = runCatching { engine.generateSmiles(atoms, bonds, anns) }.getOrNull().orEmpty()
+            val formula = if (smiles.isNotEmpty()) runCatching { IndigoNative.grossFormula(smiles) }.getOrDefault("") else ""
+            val ok = added == expectMembers && smiles.isNotEmpty()
+            if (ok) pass++ else fail++
+            log("SELFTEST REPLACE ${if (ok) "PASS" else "FAIL"} ${fg.label.padEnd(8)} members=$added/$expectMembers smiles=${smiles.ifEmpty { "<em>" }} formula=$formula")
+        }
+
         log("SELFTEST SUMMARY pass=$pass fail=$fail")
     } catch (e: Exception) {
         log("SELFTEST EXCEPTION ${e::class.simpleName}: ${e.message}")

@@ -26,78 +26,46 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Locale
-import java.util.TimeZone
 
 private const val REPO_URL = "https://github.com/linuxwff789/moleculedrawer"
 private const val LATEST_RELEASE_PAGE = "$REPO_URL/releases/latest"
+private const val TAG_PREFIX = "$REPO_URL/releases/tag/"
 private const val CHANGELOG_URL = "$REPO_URL/blob/master/CHANGELOG.md"
 private const val ISSUES_URL = "$REPO_URL/issues"
-private const val API_LATEST_RELEASE = "https://api.github.com/repos/linuxwff789/moleculedrawer/releases/latest"
 
-/** GitHub 上最新的 release（只取展示需要的字段） */
+/** GitHub 上最新的 release（只用网页重定向取版本号，避开 API 限流） */
 private data class ReleaseInfo(
     val tag: String,
-    val publishedAt: String,
-    val assetName: String,
-    val sizeBytes: Long,
-    val downloadUrl: String
+    val downloadUrl: String,
+    val pageUrl: String
 )
 
-/** 拉取最新 release；失败抛异常，由调用方降级到固定链接 */
+/**
+ * 请求 releases/latest，跟随 302 后从最终 URL 里取 tag，再按固定的资产命名拼出 APK 地址。
+ * 不走 api.github.com：未认证配额 60 次/小时，共享出口 IP 经常直接 403。
+ */
 private fun fetchLatestRelease(): ReleaseInfo {
-    val conn = (URL(API_LATEST_RELEASE).openConnection() as HttpURLConnection).apply {
+    val conn = (URL(LATEST_RELEASE_PAGE).openConnection() as HttpURLConnection).apply {
         connectTimeout = 6000
         readTimeout = 6000
+        instanceFollowRedirects = true
         requestMethod = "GET"
-        setRequestProperty("Accept", "application/vnd.github+json")
         setRequestProperty("User-Agent", "MoleculeDraw-Android")
     }
     try {
-        if (conn.responseCode !in 200..299) throw IllegalStateException("HTTP ${conn.responseCode}")
-        val body = conn.inputStream.bufferedReader().use { it.readText() }
-        val json = JSONObject(body)
-        val tag = json.optString("tag_name")
-        val published = json.optString("published_at")
-        val assets = json.optJSONArray("assets")
-        var name = ""
-        var size = 0L
-        var url = json.optString("html_url", LATEST_RELEASE_PAGE)
-        if (assets != null && assets.length() > 0) {
-            // 优先 arm64 的 apk
-            var pick = assets.getJSONObject(0)
-            for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                if (a.optString("name").contains("arm64")) { pick = a; break }
-            }
-            name = pick.optString("name")
-            size = pick.optLong("size")
-            url = pick.optString("browser_download_url", url)
-        }
-        if (tag.isBlank()) throw IllegalStateException("响应里没有 tag")
-        return ReleaseInfo(tag, published, name, size, url)
+        val code = conn.responseCode
+        if (code !in 200..299) throw IllegalStateException("HTTP $code")
+        val finalUrl = conn.url.toString()
+        val tag = finalUrl.substringAfter("/releases/tag/", "").trim('/').substringBefore('?')
+        if (tag.isBlank()) throw IllegalStateException("没有找到 release 版本号")
+        val apk = "$REPO_URL/releases/download/$tag/moleculedrawer-$tag-release-arm64-v8a.apk"
+        return ReleaseInfo(tag, apk, "$TAG_PREFIX$tag")
     } finally {
         conn.disconnect()
     }
 }
-
-private fun formatPublished(iso: String): String {
-    if (iso.isBlank()) return ""
-    return runCatching {
-        val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
-            timeZone = TimeZone.getTimeZone("UTC")
-        }
-        val date = parser.parse(iso) ?: return ""
-        SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(date)
-    }.getOrDefault("")
-}
-
-private fun formatSize(bytes: Long): String =
-    if (bytes <= 0) "" else String.format(Locale.US, "%.2f MB", bytes / 1024.0 / 1024.0)
 
 private fun openUrl(context: Context, url: String) {
     runCatching {
@@ -213,14 +181,7 @@ fun AboutSheet(onDismiss: () -> Unit) {
                                     )
                                 }
                             }
-                            Spacer(Modifier.height(4.dp))
-                            val meta = listOfNotNull(
-                                formatPublished(r.publishedAt).takeIf { it.isNotEmpty() }?.let { "$it 发布" },
-                                formatSize(r.sizeBytes).takeIf { it.isNotEmpty() },
-                                r.assetName.takeIf { it.isNotEmpty() }
-                            ).joinToString(" · ")
-                            if (meta.isNotEmpty()) Text(meta, fontSize = 12.sp, color = Color(0xFF78909C))
-                            Spacer(Modifier.height(10.dp))
+                            Spacer(Modifier.height(6.dp))
                             Text(
                                 r.downloadUrl,
                                 fontSize = 11.sp,

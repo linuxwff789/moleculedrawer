@@ -120,20 +120,78 @@ fun drawHeteroAtomLabel(
 fun drawRingDoubleBond(
     canvas: android.graphics.Canvas,
     sx: Float, sy: Float, ex: Float, ey: Float,
-    ux: Float, uy: Float, paint: Paint
+    ux: Float, uy: Float, paint: Paint,
+    ringCenter: Pair<Float, Float>? = null
 ) {
     val len = hypot(ex - sx, ey - sy)
     val (off, trim) = doubleBondParams(len)
-    val px = -uy * off; val py = ux * off
-    canvas.drawLine(sx + px, sy + py, ex + px, ey + py, paint)
-    if (trim > 0f) {
-        canvas.drawLine(
-            sx + (ex - sx) * trim - px, sy + (ey - sy) * trim - py,
-            ex - (ex - sx) * trim - px, ey - (ey - sy) * trim - py, paint
-        )
-    } else {
+    if (trim <= 0f) {
+        // 经典样式：两根等长平行线，对称偏在键轴两侧
+        val px = -uy * off; val py = ux * off
+        canvas.drawLine(sx + px, sy + py, ex + px, ey + py, paint)
         canvas.drawLine(sx - px, sy - py, ex - px, ey - py, paint)
+        return
     }
+    // 专业样式：长线沿键轴（单键接到它上面，不留空隙），短线偏一侧并两端缩进
+    canvas.drawLine(sx, sy, ex, ey, paint)
+    val side = offsetSide(sx, sy, ex, ey, ux, uy, ringCenter)
+    val px = -uy * off * side; val py = ux * off * side
+    canvas.drawLine(
+        sx + (ex - sx) * trim + px, sy + (ey - sy) * trim + py,
+        ex - (ex - sx) * trim + px, ey - (ey - sy) * trim + py, paint
+    )
+}
+
+/** 偏移方向：有环心时朝环内，否则固定朝键的右手侧（同一条键总是同一侧） */
+fun offsetSide(
+    sx: Float, sy: Float, ex: Float, ey: Float,
+    ux: Float, uy: Float,
+    ringCenter: Pair<Float, Float>?
+): Float {
+    if (ringCenter == null) return 1f
+    val mx = (sx + ex) / 2f; val my = (sy + ey) / 2f
+    val along = (ringCenter.first - mx) * (-uy) + (ringCenter.second - my) * ux
+    return if (along >= 0f) 1f else -1f
+}
+
+/**
+ * 该键是否成环；成环则返回环上其余原子的质心（用作双键短线偏移方向）。
+ * 用 BFS 找 a1→a2 的最短替代路径，3~8 个原子视为环。
+ */
+fun ringCentroidForBond(
+    atoms: List<MoleculeAtom>,
+    bonds: List<MoleculeBond>,
+    id1: Int, id2: Int,
+    maxPath: Int = 8
+): Pair<Float, Float>? {
+    if (!isProStyle()) return null
+    val adj = HashMap<Int, MutableList<Int>>()
+    for (b in bonds) {
+        if ((b.atom1 == id1 && b.atom2 == id2) || (b.atom1 == id2 && b.atom2 == id1)) continue
+        adj.getOrPut(b.atom1) { mutableListOf() }.add(b.atom2)
+        adj.getOrPut(b.atom2) { mutableListOf() }.add(b.atom1)
+    }
+    val prev = HashMap<Int, Int>()
+    val queue = ArrayDeque<Int>()
+    queue.add(id1); prev[id1] = Int.MIN_VALUE
+    while (queue.isNotEmpty()) {
+        val cur = queue.removeFirst()
+        if (cur == id2) break
+        for (n in adj[cur] ?: continue) {
+            if (!prev.containsKey(n)) { prev[n] = cur; queue.add(n) }
+        }
+    }
+    if (!prev.containsKey(id2)) return null
+    val path = mutableListOf<Int>()
+    var cur = id2
+    while (cur != Int.MIN_VALUE) {
+        path.add(cur)
+        cur = prev[cur] ?: break
+    }
+    if (path.size < 3 || path.size > maxPath) return null
+    val pts = path.mapNotNull { id -> atoms.find { it.id == id } }
+    if (pts.size != path.size) return null
+    return Pair(pts.map { it.x }.average().toFloat(), pts.map { it.y }.average().toFloat())
 }
 
 /** 把缩写拆成"元素+紧跟的下标"词元，例如 NO₂ → [N, O₂] */
@@ -172,7 +230,8 @@ fun ellipseTrim(halfW: Float, halfH: Float, ux: Float, uy: Float): Float {
 
 fun DrawScope.drawBond(
     a1: MoleculeAtom, a2: MoleculeAtom, type: BondType, kekuleIndex: Int = -1,
-    box1: Pair<Float, Float>? = null, box2: Pair<Float, Float>? = null
+    box1: Pair<Float, Float>? = null, box2: Pair<Float, Float>? = null,
+    ringCenter: Pair<Float, Float>? = null
 ) {
     val p1 = Offset(a1.x, a1.y); val p2 = Offset(a2.x, a2.y)
     val dx = p2.x - p1.x; val dy = p2.y - p1.y
@@ -224,14 +283,17 @@ fun DrawScope.drawBond(
             }
         }
         BondType.DOUBLE -> {
-            val px = -uy * off; val py = ux * off
-            drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = sw - 0.3f)
             if (trim > 0f) {
-                // 专业样式：第二根线两端缩进，形成"一长一短"的印刷体双键
-                val ax = s1.x + (s2.x - s1.x) * trim - px; val ay = s1.y + (s2.y - s1.y) * trim - py
-                val bx = s2.x - (s2.x - s1.x) * trim - px; val by = s2.y - (s2.y - s1.y) * trim - py
+                // 专业样式：长线压在键轴上（单键才能接住），短线偏移到一侧并两端缩进
+                drawLine(bondColor, s1, s2, strokeWidth = sw - 0.3f)
+                val side = offsetSide(s1.x, s1.y, s2.x, s2.y, ux, uy, ringCenter)
+                val px = -uy * off * side; val py = ux * off * side
+                val ax = s1.x + (s2.x - s1.x) * trim + px; val ay = s1.y + (s2.y - s1.y) * trim + py
+                val bx = s2.x - (s2.x - s1.x) * trim + px; val by = s2.y - (s2.y - s1.y) * trim + py
                 drawLine(bondColor, Offset(ax, ay), Offset(bx, by), strokeWidth = sw - 0.3f)
             } else {
+                val px = -uy * off; val py = ux * off
+                drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = sw - 0.3f)
                 drawLine(bondColor, Offset(s1.x - px, s1.y - py), Offset(s2.x - px, s2.y - py), strokeWidth = sw - 0.5f)
             }
         }

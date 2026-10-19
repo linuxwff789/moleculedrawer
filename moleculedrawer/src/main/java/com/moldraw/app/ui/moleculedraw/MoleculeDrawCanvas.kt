@@ -142,7 +142,8 @@ fun DrawScope.drawCanvasContent(
             MoleculeAtom(a2.id, transformX(a2), transformY(a2), a2.element),
             b.type,
             box1 = labelBoxes[a1.id],
-            box2 = labelBoxes[a2.id]
+            box2 = labelBoxes[a2.id],
+            ringCenter = ringCentroidForBond(atoms, bonds, a1.id, a2.id)
         )
     }
     // 跳过被 FUNC_GROUP 标注覆盖的原子（有 funGroupLabel 的都跳过，标注文字替代渲染）
@@ -484,6 +485,8 @@ fun DrawScope.drawCanvasContent(
             // 凯库勒式：单双交替
             for (ring0 in rings) {
                 val ring = ring0 as List<Pair<Float, Float>>
+                val rc = Pair(ring.map { xf(it.first) }.average().toFloat(),
+                              ring.map { yf(it.second) }.average().toFloat())
                 for (i in 0 until ring.size) {
                     val j = (i + 1) % ring.size
                     val p1 = ring[i]; val p2 = ring[j]
@@ -494,7 +497,7 @@ fun DrawScope.drawCanvasContent(
                     if (i % 2 == 0) {
                         drawBond(a1, a2, BondType.SINGLE, box1 = bx1, box2 = bx2)
                     } else {
-                        drawBond(a1, a2, BondType.DOUBLE, box1 = bx1, box2 = bx2)
+                        drawBond(a1, a2, BondType.DOUBLE, box1 = bx1, box2 = bx2, ringCenter = rc)
                     }
                 }
             }

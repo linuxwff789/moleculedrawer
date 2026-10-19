@@ -440,13 +440,18 @@ fun sharePdf(
         when (b.type) {
             BondType.SINGLE -> canvas.drawLine(sx, sy, ex, ey, strokePaint)
             BondType.DOUBLE -> {
-                val px = -uy * bOff; val py = ux * bOff
-                canvas.drawLine(sx+px, sy+py, ex+px, ey+py, strokePaint)
                 if (bTrim > 0f) {
-                    val ax = sx + (ex-sx)*bTrim - px; val ay = sy + (ey-sy)*bTrim - py
-                    val bx = ex - (ex-sx)*bTrim - px; val by = ey - (ey-sy)*bTrim - py
-                    canvas.drawLine(ax, ay, bx, by, strokePaint)
+                    // 长线压在键轴上（单键才能接住），短线偏移一侧并两端缩进
+                    canvas.drawLine(sx, sy, ex, ey, strokePaint)
+                    val side = offsetSide(sx, sy, ex, ey, ux, uy, ringCentroidForBond(atoms, bonds, a1.id, a2.id))
+                    val px = -uy * bOff * side; val py = ux * bOff * side
+                    canvas.drawLine(
+                        sx + (ex-sx)*bTrim + px, sy + (ey-sy)*bTrim + py,
+                        ex - (ex-sx)*bTrim + px, ey - (ey-sy)*bTrim + py, strokePaint
+                    )
                 } else {
+                    val px = -uy * bOff; val py = ux * bOff
+                    canvas.drawLine(sx+px, sy+py, ex+px, ey+py, strokePaint)
                     canvas.drawLine(sx-px, sy-py, ex-px, ey-py, strokePaint)
                 }
             }
@@ -507,6 +512,8 @@ fun sharePdf(
     } else {
         for (ring0 in paulingRings) {
             val ring = ring0 as List<Pair<Float, Float>>
+            val rc = Pair(ring.map { it.first }.average().toFloat() + offsetX,
+                          ring.map { it.second }.average().toFloat() + offsetY)
             for (i in 0 until ring.size) {
                 val j = (i + 1) % ring.size
                 val a1 = ring[i]; val a2 = ring[j]
@@ -519,7 +526,8 @@ fun sharePdf(
                 if (i % 2 == 0) {
                     canvas.drawLine(sx, sy, ex, ey, strokePaint)
                 } else {
-                    drawRingDoubleBond(canvas, sx, sy, ex, ey, ux, uy, doublePaint)
+                    drawRingDoubleBond(canvas, sx, sy, ex, ey, ux, uy, doublePaint,
+                        ringCenter = rc)
                 }
             }
         }

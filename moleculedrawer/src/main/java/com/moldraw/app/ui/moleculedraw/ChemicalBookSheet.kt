@@ -226,7 +226,8 @@ private fun fillMolJs(mol: String): String {
           return;
         }
         clearInterval(timer);
-        console.log('[CB] ketcher api set=' + (typeof k.setMolecule) + ' get=' + (typeof k.getMolfile));
+        console.log('[CB] ketcher api set=' + (typeof k.setMolecule) + ' get=' + (typeof k.getMolfile) +
+                    ' layout=' + (typeof k.layout) + ' zoomFit=' + (typeof k.zoomToFit));
         try {
           var r = k.setMolecule(mol);
           var after = function () {

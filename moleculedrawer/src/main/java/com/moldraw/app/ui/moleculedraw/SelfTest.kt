@@ -263,6 +263,30 @@ fun runSelfTest(context: Context) {
             log("SELFTEST MOL_V2000 ${if (ok) "PASS" else "FAIL"} n=$n m=$m counts='${counts}' len=${counts.length} atomLen=${lines[4].length} bondLen=${bondLine.length}")
         }
 
+        // ── molfile 坐标尺度：必须是 1.5 左右的标准尺度，否则 Ketcher/ChemDraw 里会放大几十倍看不见 ──
+        run {
+            val as_ = (0 until 6).map { i ->
+                val ang = 2 * Math.PI * i / 6
+                MoleculeAtom(i + 1, 55f * kotlin.math.cos(ang).toFloat(), 55f * kotlin.math.sin(ang).toFloat(), Element.C)
+            }
+            val bs = (0 until 6).map { i -> MoleculeBond(i + 1, i + 1, (i + 1) % 6 + 1, BondType.SINGLE) }
+            val mol = MoleculeData(as_, bs).toMol()
+            val lines = mol.lines()
+            val coords = (0 until 6).map {
+                val l = lines[4 + it]
+                l.substring(0, 10).trim().toFloat() to l.substring(10, 20).trim().toFloat()
+            }
+            val lens = (0 until 6).map { i ->
+                val a = coords[i]; val b = coords[(i + 1) % 6]
+                kotlin.math.hypot(b.first - a.first, b.second - a.second)
+            }
+            val avg = lens.average().toFloat()
+            val maxAbs = coords.maxOf { kotlin.math.max(kotlin.math.abs(it.first), kotlin.math.abs(it.second)) }
+            val ok = avg in 1.4f..1.6f && maxAbs < 10f
+            if (ok) pass++ else fail++
+            log("SELFTEST MOL_SCALE ${if (ok) "PASS" else "FAIL"} avgBond=$avg maxCoord=$maxAbs")
+        }
+
         log("SELFTEST SUMMARY pass=$pass fail=$fail")
     } catch (e: Exception) {
         log("SELFTEST EXCEPTION ${e::class.simpleName}: ${e.message}")

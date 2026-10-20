@@ -65,20 +65,28 @@ data class MoleculeData(val atoms: List<MoleculeAtom> = emptyList(), val bonds: 
         sb.appendLine("  MoleculeDrawer  2D")
         sb.appendLine("")
         // 计数行是定宽格式：11 个 3 字符字段 + " V2000"，版本号必须落在第 34~39 列。
-        // 用字符串拼接（"  $n  $b ..."）时两位数/三位数会把整行推宽，
-        // ChemicalBook 之类严格的解析器就读成 "99 V20"。
+        // 用字符串拼接时两位数/三位数会把整行推宽，严格解析器会读成 "99 V20"。
         sb.appendLine(
             String.format(
                 java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d V2000",
                 atoms.size, bonds.size, 0, 0, 0, 0, 0, 0, 0, 0, 999
             )
         )
+        // 画布坐标是像素（键长约 55），molfile 惯例是键长约 1.5。
+        // 不归一化的话，Ketcher/ChemDraw 会按 1 单位≈40px 渲染，分子被放大几十倍，
+        // 画布上只看得见一小段线，表现为"什么都没显示"。
+        val lens = bonds.mapNotNull { b ->
+            val a1 = atoms.find { it.id == b.atom1 }
+            val a2 = atoms.find { it.id == b.atom2 }
+            if (a1 != null && a2 != null) kotlin.math.hypot(a2.x - a1.x, a2.y - a1.y) else null
+        }.filter { it > 1f }
+        val avg = if (lens.isNotEmpty()) lens.average().toFloat() else BOND_LENGTH
+        val k = if (avg > 0.01f) 1.5f / avg else 1f
         for (a in atoms) {
-            val xStr = String.format(java.util.Locale.US, "%10.4f", a.x)
-            val yStr = String.format(java.util.Locale.US, "%10.4f", a.y)
+            val xStr = String.format(java.util.Locale.US, "%10.4f", a.x * k)
+            val yStr = String.format(java.util.Locale.US, "%10.4f", a.y * k)
             val zStr = String.format(java.util.Locale.US, "%10.4f", 0f)
             val elemPadded = a.element.symbol.padEnd(3)
-            // 坐标(30) + 空格 + 元素(3) + 12 个定宽字段
             sb.append(xStr).append(yStr).append(zStr).append(' ').append(elemPadded)
             sb.append(" 0  0  0  0  0  0  0  0  0  0  0  0\n")
         }

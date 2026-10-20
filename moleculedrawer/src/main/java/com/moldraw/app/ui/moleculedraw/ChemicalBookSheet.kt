@@ -278,7 +278,7 @@ fun ChemicalBookSheet(
         }
     }
 
-    fun lookupSmilesText(smilesIn: String) {
+    fun lookupSmilesText(smilesIn: String, autoOpen: Boolean = false) {
         reverseBusy = true
         status = "正在用 SMILES 反查…"
         hit = null
@@ -292,6 +292,12 @@ fun ChemicalBookSheet(
             } else {
                 hit = r
                 status = ""
+                // 从 SMILES 搜进来的，直接一路跳到理化详情页
+                if (autoOpen && r.cas.isNotEmpty()) {
+                    autoFollow = true
+                    status = "已识别：${r.name}，正在打开理化详情页…"
+                    web?.loadUrl("https://m.chemicalbook.com/CAS_" + r.cas + ".htm")
+                }
             }
         }
     }
@@ -333,7 +339,7 @@ fun ChemicalBookSheet(
         sniffed = null
         hit = null
         if (looksLikeSmiles(q)) {
-            lookupSmilesText(q)
+            lookupSmilesText(q, autoOpen = true)
             return
         }
         status = "搜索中…"

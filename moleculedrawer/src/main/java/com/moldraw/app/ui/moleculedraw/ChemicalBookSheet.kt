@@ -204,14 +204,40 @@ private fun fillMolJs(mol: String): String {
         catch (e) { return 'unparsed'; }
       }
 
+      // 画布内容是否真的落在可见区域：结构 bbox 和 svg 视口对比
+      function canvasInfo() {
+        try {
+          var inner = frame().contentWindow;
+          var svg = inner.document.querySelector('svg');
+          if (!svg) return 'no-svg';
+          var r = svg.getBoundingClientRect();
+          var paths = svg.querySelectorAll('path,line,polyline,polygon');
+          var n = 0, minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+          for (var i = 0; i < paths.length; i++) {
+            try {
+              var b = paths[i].getBBox();
+              if (b.width > 0.5 || b.height > 0.5) {
+                n++;
+                if (b.x < minx) minx = b.x;
+                if (b.y < miny) miny = b.y;
+                if (b.x + b.width > maxx) maxx = b.x + b.width;
+                if (b.y + b.height > maxy) maxy = b.y + b.height;
+              }
+            } catch (e) {}
+          }
+          return 'view=' + Math.round(r.width) + 'x' + Math.round(r.height) + ' paths=' + n +
+                 ' bbox=' + Math.round(minx) + ',' + Math.round(miny) + ',' + Math.round(maxx) + ',' + Math.round(maxy);
+        } catch (e) { return 'canvasInfo error ' + e; }
+      }
+
       function readback(k) {
         try {
           var out = k.getMolfile();
           var inner = frame() && frame().contentWindow;
           var svgNodes = 0;
           try { svgNodes = inner.document.querySelectorAll('svg *').length; } catch (e) {}
-          if (out && out.then) out.then(function (m) { console.log('[CB] readback ' + countAtoms(m) + ' svg=' + svgNodes); });
-          else console.log('[CB] readback ' + countAtoms(out) + ' svg=' + svgNodes);
+          if (out && out.then) out.then(function (m) { console.log('[CB] readback ' + countAtoms(m) + ' svg=' + svgNodes + ' ' + canvasInfo()); });
+          else console.log('[CB] readback ' + countAtoms(out) + ' svg=' + svgNodes + ' ' + canvasInfo());
         } catch (e) { console.log('[CB] readback error ' + e); }
       }
 

@@ -593,6 +593,15 @@ if (s.showSaveDialog) {
         AboutSheet(onDismiss = { showAbout = false })
     }
 
+    if (s.showChemicalSearch) {
+        ChemicalBookSheet(
+            atoms = s.atoms, bonds = s.bonds, annotations = s.annotations,
+            selectedIds = s.selectedIds, layoutEngine = layoutEngine,
+            canvasSizePx = s.canvasSizePx,
+            onDismiss = { s.showChemicalSearch = false }
+        )
+    }
+
     // 打开的文档列表
     if (showDocSheet) {
         ModalBottomSheet(onDismissRequest = { showDocSheet = false }) {
@@ -700,6 +709,11 @@ if (s.showSaveDialog) {
                             text = { Text("导入 SMILES / Molfile", fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.FileOpen, null, modifier = Modifier.size(18.dp)) },
                             onClick = { menuExpanded = false; s.showImportDialog = true; s.importInput = "" }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("查结构（ChemicalBook）", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.Search, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; s.showChemicalSearch = true }
                         )
                         DropdownMenuItem(
                             text = { Text("导出图片 / 文件", fontSize = 13.sp) },

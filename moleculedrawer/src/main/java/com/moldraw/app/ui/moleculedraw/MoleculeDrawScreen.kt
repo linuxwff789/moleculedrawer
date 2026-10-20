@@ -596,7 +596,7 @@ if (s.showSaveDialog) {
     if (s.showChemicalSearch) {
         ChemicalBookSheet(
             atoms = s.atoms, bonds = s.bonds, annotations = s.annotations,
-            selectedIds = s.selectedIds, layoutEngine = layoutEngine,
+            selectedIds = s.selectedIds.toMutableSet(), layoutEngine = layoutEngine,
             canvasSizePx = s.canvasSizePx,
             onDismiss = { s.showChemicalSearch = false }
         )

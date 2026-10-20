@@ -324,6 +324,7 @@ fun ChemicalBookSheet(
     var reverseBusy by remember { mutableStateOf(false) }
     var autoFollow by remember { mutableStateOf(false) }
     var pendingQuery by remember { mutableStateOf(initialQuery.trim()) }
+    var loadRetries by remember { mutableStateOf(0) }
     var web by remember { mutableStateOf<WebView?>(null) }
 
     fun doSniff(w: WebView) {
@@ -523,6 +524,15 @@ fun ChemicalBookSheet(
                                         view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?
                                     ) {
                                         android.util.Log.w("MOLDRAW_DEBUG", "[CB] error ${request?.url} ${error?.description}")
+                                        // 代理/VPN 的 DNS 偶发解析失败，主文档失败时自动重试几次
+                                        if (request?.isForMainFrame == true && loadRetries < 3) {
+                                            loadRetries++
+                                            val delayMs = 1200L * loadRetries
+                                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                                                status = "网络失败，正在重试…"
+                                                view?.reload()
+                                            }, delayMs)
+                                        }
                                     }
 
                                     override fun shouldOverrideUrlLoading(
@@ -532,6 +542,7 @@ fun ChemicalBookSheet(
 
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         loading = false
+                                        loadRetries = 0
                                         android.util.Log.d("MOLDRAW_DEBUG", "[CB] page done $url pasteMol=${pasteMol.length}")
                                         if (pasteMol.isNotBlank() && view != null) {
                                             status = "正在把 molfile 填进结构式搜索…"

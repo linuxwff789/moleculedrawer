@@ -84,6 +84,59 @@ private data class Sniffed(
     val hasStructure: Boolean get() = molUrl.isNotEmpty() || smiles.isNotEmpty()
 }
 
+/** PubChem 反查结果 */
+private data class PcHit(
+    val cid: Int,
+    val name: String,
+    val formula: String,
+    val mass: String,
+    val cas: String,
+    val smiles: String
+)
+
+/**
+ * 用结构（SMILES）反查这是什么化合物：PubChem 精确结构匹配。
+ * ChemicalBook 本身只支持名称/CAS 检索，所以结构 → 名称这一步只能走 PubChem，
+ * 拿到 CAS 之后再回到站点里搜中文名/供应商。
+ */
+internal fun pubchemLookup(smiles: String): PcHit? = runCatching {
+    fun http(url: String): String {
+        val c = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000
+            readTimeout = 20000
+            setRequestProperty("User-Agent", CB_UA)
+        }
+        return c.inputStream.bufferedReader().use { it.readText() }
+    }
+    val enc = URLEncoder.encode(smiles, "UTF-8")
+    val cidsJson = JSONObject(http("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/$enc/cids/JSON"))
+    val arr = cidsJson.optJSONObject("IdentifierList")?.optJSONArray("CID") ?: return null
+    if (arr.length() == 0) return null
+    val cid = arr.getInt(0)
+    val propJson = JSONObject(
+        http("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/$cid/property/Title,IUPACName,MolecularFormula,MolecularWeight,ConnectivitySMILES/JSON")
+    )
+    val p = propJson.optJSONObject("PropertyTable")?.optJSONArray("Properties")?.optJSONObject(0)
+    val xrefJson = JSONObject(http("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/$cid/xrefs/RegistryID/JSON"))
+    val regs = xrefJson.optJSONObject("InformationList")?.optJSONArray("Information")?.optJSONObject(0)
+        ?.optJSONArray("RegistryID")
+    var cas = ""
+    if (regs != null) {
+        for (i in 0 until regs.length()) {
+            val v = regs.optString(i)
+            if (Regex("^\\d{2,7}-\\d{2}-\\d$").matches(v)) { cas = v; break }
+        }
+    }
+    PcHit(
+        cid = cid,
+        name = p?.optString("Title").orEmpty().ifBlank { p?.optString("IUPACName").orEmpty() },
+        formula = p?.optString("MolecularFormula").orEmpty(),
+        mass = p?.optString("MolecularWeight").orEmpty(),
+        cas = cas,
+        smiles = smiles
+    )
+}.getOrNull()
+
 /** 在页面里找 SMILES 标签（桌面版 th/td、移动版 li>span）与 MOL 下载链接 */
 private val SNIFF_JS = """
 (function () {
@@ -147,6 +200,8 @@ fun ChemicalBookSheet(
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
     var sniffed by remember { mutableStateOf<Sniffed?>(null) }
+    var hit by remember { mutableStateOf<PcHit?>(null) }
+    var reverseBusy by remember { mutableStateOf(false) }
     var web by remember { mutableStateOf<WebView?>(null) }
 
     fun doSniff(w: WebView) {
@@ -210,6 +265,35 @@ fun ChemicalBookSheet(
             processSmilesImport(s.smiles, layoutEngine, atoms, bonds, annotations, selectedIds, gNextId, canvasSizePx)
             status = "已导入 ${atoms.size} 个原子（SMILES）"
             sniffed = null
+        }
+    }
+
+    fun doReverseLookup() {
+        if (atoms.isEmpty()) { status = "画布是空的，先画个结构"; return }
+        reverseBusy = true
+        status = "正在用当前结构的 SMILES 反查…"
+        hit = null
+        scope.launch {
+            val smiles = withContext(Dispatchers.Default) {
+                runCatching {
+                    IndigoNativeLayoutEngineAdapter().generateSmiles(atoms.toList(), bonds.toList(), annotations.toList())
+                }.getOrNull().orEmpty()
+            }
+            android.util.Log.d("MOLDRAW_DEBUG", "[CB] reverse smiles='$smiles'")
+            if (smiles.isBlank()) {
+                reverseBusy = false
+                status = "生成 SMILES 失败，检查结构有没有异常价态"
+                return@launch
+            }
+            val r = withContext(Dispatchers.IO) { pubchemLookup(smiles) }
+            android.util.Log.d("MOLDRAW_DEBUG", "[CB] reverse hit=$r")
+            reverseBusy = false
+            if (r == null) {
+                status = "PubChem 里没有匹配的结构（SMILES: $smiles）"
+            } else {
+                hit = r
+                status = ""
+            }
         }
     }
 
@@ -337,16 +421,54 @@ fun ChemicalBookSheet(
                         }
                     }
                 } else {
-                    Row(
-                        Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        if (status.isNotEmpty()) Text(status, fontSize = 12.sp, maxLines = 2)
-                        else Text("在站内搜到化合物后，打开「理化信息」页即可导入", fontSize = 12.sp)
-                        Spacer(Modifier.weight(1f))
-                        if (status.contains("正在") || status.contains("中…")) {
-                            CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant)) {
+                        val h = hit
+                        if (h != null) {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                Text(
+                                    "${h.name.ifBlank { "未命名" }}   CID ${h.cid}",
+                                    fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2
+                                )
+                                Text(
+                                    buildString {
+                                        if (h.cas.isNotEmpty()) append("CAS ").append(h.cas).append("    ")
+                                        if (h.formula.isNotEmpty()) append(h.formula).append("    ")
+                                        if (h.mass.isNotEmpty()) append(h.mass)
+                                    }.trim(),
+                                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2
+                                )
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    if (h.cas.isNotEmpty()) {
+                                        TextButton(onClick = {
+                                            query = h.cas
+                                            status = "正在站内搜 CAS ${h.cas}…"
+                                            web?.evaluateJavascript(submitSearchJs(h.cas)) { r ->
+                                                if (r != null && r.contains("no-field")) status = "页面上没找到搜索框，请手动输入"
+                                            }
+                                        }) { Text("在 ChemicalBook 搜 CAS") }
+                                    }
+                                    TextButton(onClick = { hit = null }) { Text("关闭") }
+                                }
+                            }
+                        }
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                when {
+                                    status.isNotEmpty() -> status
+                                    else -> "搜到化合物后打开「理化信息」页即可导入；也可以反查当前画的结构"
+                                },
+                                fontSize = 12.sp, maxLines = 2, modifier = Modifier.weight(1f)
+                            )
+                            if (status.contains("正在") || status.contains("中…") || reverseBusy) {
+                                CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            TextButton(onClick = { doReverseLookup() }, enabled = !reverseBusy) {
+                                Text("反查当前结构", fontSize = 12.sp)
+                            }
                         }
                     }
                 }

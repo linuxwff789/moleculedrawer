@@ -148,6 +148,14 @@ fun runSelfTest(context: Context) {
             log("SELFTEST PLACE ${if (ok) "PASS" else "FAIL"} ${fg.label.padEnd(8)} ring(attach)=$ringOk term(replace)=$termOk atoms=${s1.atoms.size}/${s2.atoms.size}")
         }
 
+        // ── 结构反查（PubChem 精确匹配）──
+        for (smi in listOf("C1=CC=C(C=C1)C(=O)O", "CCO", "N1CC(C(O)=O)C1")) {
+            val h = runCatching { pubchemLookup(smi) }.getOrNull()
+            val ok = h != null && h.cid > 0 && h.name.isNotBlank()
+            if (ok) pass++ else fail++
+            log("SELFTEST PUBCHEM ${if (ok) "PASS" else "FAIL"} $smi cid=${h?.cid} name=${h?.name} formula=${h?.formula} cas=${h?.cas}")
+        }
+
         log("SELFTEST SUMMARY pass=$pass fail=$fail")
     } catch (e: Exception) {
         log("SELFTEST EXCEPTION ${e::class.simpleName}: ${e.message}")

@@ -377,6 +377,7 @@ fun ChemicalBookSheet(
         }
     }
 
+    android.util.Log.d("MOLDRAW_DEBUG", "[CB] sheet compose pasteMol=${'$'}{pasteMol.length} q=${'$'}initialQuery")
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().imePadding()) {
@@ -427,6 +428,12 @@ fun ChemicalBookSheet(
                                         loading = true
                                     }
 
+                                    override fun onReceivedError(
+                                        view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?
+                                    ) {
+                                        android.util.Log.w("MOLDRAW_DEBUG", "[CB] error ${'$'}{request?.url} ${'$'}{error?.description}")
+                                    }
+
                                     override fun shouldOverrideUrlLoading(
                                         view: WebView?,
                                         request: WebResourceRequest?
@@ -434,6 +441,7 @@ fun ChemicalBookSheet(
 
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         loading = false
+                                        android.util.Log.d("MOLDRAW_DEBUG", "[CB] page done $url pasteMol=${'$'}{pasteMol.length}")
                                         if (pasteMol.isNotBlank() && view != null) {
                                             status = "正在把 molfile 填进结构式搜索…"
                                             view.evaluateJavascript(fillMolJs(pasteMol)) { r ->

@@ -208,41 +208,33 @@ fun MoleculeContextBar(
         if (s.atoms.isEmpty() || f <= 0f || abs(f - 1f) < 0.001f) return
         s.pushUndo()
         val hasSel = s.selectedIds.isNotEmpty()
-        val targets = if (hasSel) s.atoms.filter { it.id in s.selectedIds } else s.atoms.toList()
+        val ids = if (hasSel) s.selectedIds else s.atoms.map { it.id }.toSet()
+        val targets = s.atoms.filter { it.id in ids }
         if (targets.isEmpty()) return
         val cx = targets.map { it.x }.average().toFloat()
         val cy = targets.map { it.y }.average().toFloat()
-        if (hasSel) {
-            for (a in s.atoms) {
-                if (a.id !in s.selectedIds) continue
-                a.x = cx + (a.x - cx) * f
-                a.y = cy + (a.y - cy) * f
-            }
-            for (ann in s.annotations) {
-                if (-ann.id !in s.selectedIds) continue
-                ann.scale *= f
-                ann.x = cx + (ann.x - cx) * f
-                ann.y = cy + (ann.y - cy) * f
-                if (ann.type == AnnotationType.ARROW) {
-                    ann.endX = cx + (ann.endX - cx) * f
-                    ann.endY = cy + (ann.endY - cy) * f
-                }
-            }
-        } else {
-            for (a in s.atoms) {
-                a.x = cx + (a.x - cx) * f
-                a.y = cy + (a.y - cy) * f
-            }
-            for (ann in s.annotations) {
-                ann.scale *= f
-                ann.x = cx + (ann.x - cx) * f
-                ann.y = cy + (ann.y - cy) * f
-                if (ann.type == AnnotationType.ARROW) {
-                    ann.endX = cx + (ann.endX - cx) * f
-                    ann.endY = cy + (ann.endY - cy) * f
-                }
-            }
+
+        // 注意：MoleculeAtom 是可变的 data class，就地改 x/y 不会让快照列表失效，
+        // Compose 收不到变更 → 画布要等下一次点击才重绘。这里用 copy 造新对象再整体重填。
+        val newAtoms = s.atoms.map { a ->
+            if (a.id in ids) a.copy(x = cx + (a.x - cx) * f, y = cy + (a.y - cy) * f) else a
         }
+        s.atoms.clear()
+        s.atoms.addAll(newAtoms)
+
+        val newAnns = s.annotations.map { ann ->
+            if (-ann.id in ids) {
+                val nx = cx + (ann.x - cx) * f
+                val ny = cy + (ann.y - cy) * f
+                if (ann.type == AnnotationType.ARROW) {
+                    ann.copy(scale = ann.scale * f, x = nx, y = ny,
+                        endX = cx + (ann.endX - cx) * f, endY = cy + (ann.endY - cy) * f)
+                } else ann.copy(scale = ann.scale * f, x = nx, y = ny)
+            } else ann
+        }
+        s.annotations.clear()
+        s.annotations.addAll(newAnns)
+
         s.scaleFactor = 1f
         s.scaleValue = "1.0"
     }

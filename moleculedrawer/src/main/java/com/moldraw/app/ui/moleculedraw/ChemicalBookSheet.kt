@@ -183,6 +183,7 @@ fun ChemicalBookSheet(
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
@@ -193,6 +194,7 @@ fun ChemicalBookSheet(
     var pendingQuery by remember { mutableStateOf(initialQuery.trim()) }
     var loadRetries by remember { mutableStateOf(0) }
     var web by remember { mutableStateOf<WebView?>(null) }
+    var autoImportQueue by remember { mutableStateOf<Sniffed?>(null) }
 
     fun doSniff(w: WebView) {
         w.evaluateJavascript(cbScripts(context)) {
@@ -216,7 +218,7 @@ fun ChemicalBookSheet(
             // 商品页没有结构但有「理化信息」链接时也要显示，好让用户跳过去
             android.util.Log.d("MOLDRAW_DEBUG", "[CB] sniff cas=${s?.cas} mol=${s?.molUrl} smiles=${s?.smiles} prop=${s?.propUrl}")
             if (s != null && (s.hasStructure || s.propUrl.isNotEmpty() || s.cas.isNotEmpty())) sniffed = s
-            if (autoImport && s != null && s.hasStructure) importStructure(s)
+            if (autoImport && s != null && s.hasStructure) autoImportQueue = s
             // 从 CAS 页进来时，自动再跳一步到理化详情页
             if (s != null && autoFollow && !s.hasStructure && s.propUrl.isNotEmpty()) {
                 autoFollow = false
@@ -295,6 +297,15 @@ fun ChemicalBookSheet(
             }
         } else {
             fallbackSmiles("页面没有 MOL 文件")
+        }
+    }
+
+    // autoImport 调试/自测用：结构一旦嗅探到就自动导入（放在 importStructure 定义之后，避免前向引用）
+    androidx.compose.runtime.LaunchedEffect(autoImportQueue) {
+        val q = autoImportQueue
+        if (q != null) {
+            autoImportQueue = null
+            importStructure(q)
         }
     }
 

@@ -190,6 +190,15 @@ private fun fillMolJs(mol: String): String {
             st.textContent = '.Maps,.structure,#foot,header,.head,.nav,.header{display:none!important}';
             (document.head || document.documentElement).appendChild(st);
           }
+          // 站点把编辑器写死 700px 宽，屏窄时会横向溢出：用 CSS zoom 整体缩到刚好铺满，
+          // iframe 内部仍是 700x500（Ketcher 的坐标映射不受影响，缩放后仍能拖动）
+          try {
+            if (!document.body.dataset.cbZoom && window.innerWidth < 720) {
+              var z = Math.max(0.6, Math.min(1, window.innerWidth / 712));
+              document.body.style.zoom = z;
+              document.body.dataset.cbZoom = String(z);
+            }
+          } catch (e) {}
         } catch (e) {}
       }
 
@@ -202,16 +211,11 @@ private fun fillMolJs(mol: String): String {
           var wrap = tab && tab.parentElement;
           if (wrap) { wrap.style.display = 'block'; }
           if (f) {
+            // 不要改 iframe 宽高：Ketcher 在加载时按 700x500 建画布，
+            // 事后改容器尺寸会让它重绘到错误视口（点一下就空白、拖动也不跟手）。
+            // 只保证它可见，尺寸交给站点自己。
             f.style.visibility = 'visible';
             f.style.display = 'block';
-            f.style.width = '100%';
-            // 撑满剩余视口（页面顶部有站点头部/面包屑，别只给 62vh）
-            var topPx = 0;
-            try { topPx = Math.max(0, f.getBoundingClientRect().top); } catch (e) {}
-            var hPx = Math.max(360, Math.round(window.innerHeight - topPx - 70));
-            f.style.height = hPx + 'px';
-            f.style.minHeight = '360px';
-            f.contentWindow.dispatchEvent(new Event('resize'));
           }
         } catch (e) { console.log('[CB] reveal error ' + e); }
       }

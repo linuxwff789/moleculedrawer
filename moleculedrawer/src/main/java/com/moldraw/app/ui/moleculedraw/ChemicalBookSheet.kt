@@ -85,7 +85,7 @@ private data class Sniffed(
 }
 
 /** PubChem 反查结果 */
-private data class PcHit(
+internal data class PcHit(
     val cid: Int,
     val name: String,
     val formula: String,

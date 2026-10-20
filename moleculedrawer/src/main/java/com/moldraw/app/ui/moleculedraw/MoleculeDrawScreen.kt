@@ -187,6 +187,15 @@ fun MoleculeDrawApp(
     // 调试：am start ... --ez moldraw_cb_struct 1 → 打开结构式搜索并填入「苯甲酸」（9 原子，明显区别于默认苯环）
     androidx.compose.runtime.LaunchedEffect(Unit) {
         val it0 = (context as? android.app.Activity)?.intent
+        // 也可以直接喂一个 molfile：--es moldraw_cb_mol_file /sdcard/Download/test.mol
+        val molFile = it0?.getStringExtra("moldraw_cb_mol_file") ?: ""
+        if (molFile.isNotBlank() && !s.showChemicalSearch) {
+            val txt = runCatching { java.io.File(molFile).readText() }.getOrNull().orEmpty()
+            if (txt.isNotBlank()) {
+                s.chemicalPasteMol = txt
+                s.showChemicalSearch = true
+            }
+        }
         if (it0?.hasExtra("moldraw_cb_struct") == true && !s.showChemicalSearch) {
             // 苯环 6C + COOH（C,O,O）→ 9 原子 9 键
             val el = listOf("C", "C", "C", "C", "C", "C", "C", "O", "O")

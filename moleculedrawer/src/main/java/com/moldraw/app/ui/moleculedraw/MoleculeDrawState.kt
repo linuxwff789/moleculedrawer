@@ -281,6 +281,8 @@ class MoleculeDrawState {
     var showChemicalSearch by mutableStateOf(false)
     var chemicalInitialQuery by mutableStateOf("")
     var chemicalPasteMol by mutableStateOf("")
+    var chemicalDirectUrl by mutableStateOf("")
+    var chemicalAutoImport by mutableStateOf(false)
     var importInput by mutableStateOf("")
     var showExportDialog by mutableStateOf(false)
     // 项目文件保存/打开相关

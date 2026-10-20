@@ -143,7 +143,15 @@ private val SNIFF_JS = """
 (function () {
   function txt(e) { return ((e && e.textContent) || '').replace(/\s+/g, ' ').trim(); }
   var out = { smiles: '', cas: '', mol: '', prop: '', title: document.title || '' };
+  // MOL 链接有两种形态：/CAS/mol/{CAS}.mol 和 /CAS/{yyyyMMdd}/mol/{CAS}.mol
   var a = document.querySelector('a[href*="/CAS/mol/"]');
+  if (!a) {
+    var ls = document.querySelectorAll('a[href]');
+    for (var li = 0; li < ls.length; li++) {
+      var hv = ls[li].getAttribute('href') || '';
+      if (/\.mol(\?|$)/i.test(hv)) { a = ls[li]; break; }
+    }
+  }
   if (a) {
     out.mol = a.href;
     var mm = a.href.match(/\/([0-9]{2,7}-[0-9]{2}-[0-9])\.mol/i);
@@ -335,6 +343,8 @@ fun ChemicalBookSheet(
     canvasSizePx: Size,
     initialQuery: String = "",
     pasteMol: String = "",
+    initialUrl: String = "",
+    autoImport: Boolean = false,
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -367,7 +377,9 @@ fun ChemicalBookSheet(
                 )
             }.getOrNull()
             // 商品页没有结构但有「理化信息」链接时也要显示，好让用户跳过去
+            android.util.Log.d("MOLDRAW_DEBUG", "[CB] sniff cas=${s?.cas} mol=${s?.molUrl} smiles=${s?.smiles} prop=${s?.propUrl}")
             if (s != null && (s.hasStructure || s.propUrl.isNotEmpty() || s.cas.isNotEmpty())) sniffed = s
+            if (autoImport && s != null && s.hasStructure) importStructure(s)
             // 从 CAS 页进来时，自动再跳一步到理化详情页
             if (s != null && autoFollow && !s.hasStructure && s.propUrl.isNotEmpty()) {
                 autoFollow = false
@@ -609,7 +621,13 @@ fun ChemicalBookSheet(
                                         view?.let { doSniff(it) }
                                     }
                                 }
-                                loadUrl(if (pasteMol.isNotBlank()) CB_STRUCT_SEARCH else CB_HOME)
+                                loadUrl(
+                                    when {
+                                        initialUrl.isNotBlank() -> initialUrl
+                                        pasteMol.isNotBlank() -> CB_STRUCT_SEARCH
+                                        else -> CB_HOME
+                                    }
+                                )
                                 web = this
                             }
                         }

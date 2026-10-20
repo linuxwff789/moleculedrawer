@@ -188,6 +188,14 @@ fun MoleculeDrawApp(
     androidx.compose.runtime.LaunchedEffect(Unit) {
         val it0 = (context as? android.app.Activity)?.intent
         // 也可以直接喂一个 molfile：--es moldraw_cb_mol_file /sdcard/Download/test.mol
+        val directUrl = it0?.getStringExtra("moldraw_cb_url") ?: ""
+        if (directUrl.isNotBlank() && !s.showChemicalSearch) {
+            s.chemicalInitialQuery = ""
+            s.chemicalPasteMol = ""
+            s.chemicalDirectUrl = directUrl
+            s.chemicalAutoImport = it0.hasExtra("moldraw_cb_import")
+            s.showChemicalSearch = true
+        }
         val molFile = it0?.getStringExtra("moldraw_cb_mol_file") ?: ""
         if (molFile.isNotBlank() && !s.showChemicalSearch) {
             val txt = runCatching { java.io.File(molFile).readText() }.getOrNull().orEmpty()
@@ -657,7 +665,9 @@ if (s.showSaveDialog) {
             canvasSizePx = s.canvasSizePx,
             initialQuery = s.chemicalInitialQuery,
             pasteMol = s.chemicalPasteMol,
-            onDismiss = { s.showChemicalSearch = false; s.chemicalInitialQuery = ""; s.chemicalPasteMol = "" }
+            initialUrl = s.chemicalDirectUrl,
+            autoImport = s.chemicalAutoImport,
+            onDismiss = { s.showChemicalSearch = false; s.chemicalInitialQuery = ""; s.chemicalPasteMol = ""; s.chemicalDirectUrl = ""; s.chemicalAutoImport = false }
         )
     }
 

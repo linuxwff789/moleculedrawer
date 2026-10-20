@@ -184,26 +184,33 @@ fun MoleculeDrawApp(
 ) {
     val s = remember { MoleculeDrawState() }
     val context = LocalContext.current
-    // 调试：am start ... --ez moldraw_cb_struct 1 → 打开结构式搜索并填入一个苯环 molfile
+    // 调试：am start ... --ez moldraw_cb_struct 1 → 打开结构式搜索并填入「苯甲酸」（9 原子，明显区别于默认苯环）
     androidx.compose.runtime.LaunchedEffect(Unit) {
         val it0 = (context as? android.app.Activity)?.intent
         if (it0?.hasExtra("moldraw_cb_struct") == true && !s.showChemicalSearch) {
-            val names = listOf("C", "C", "C", "C", "C", "C")
-            val xs = listOf(0f, 0.866f, 1.732f, 1.732f, 0.866f, 0f)
-            val ys = listOf(-1f, -0.5f, -0.5f, 0.5f, 1f, 0.5f)
+            // 苯环 6C + COOH（C,O,O）→ 9 原子 9 键
+            val el = listOf("C", "C", "C", "C", "C", "C", "C", "O", "O")
+            val xs = listOf(0f, 0.866f, 1.732f, 1.732f, 0.866f, 0f, 2.598f, 2.598f, 3.464f)
+            val ys = listOf(-1f, -0.5f, -0.5f, 0.5f, 1f, 0.5f, 0f, -1f, -1.5f)
+            val bonds = listOf(
+                intArrayOf(1, 2, 2), intArrayOf(2, 3, 1), intArrayOf(3, 4, 2),
+                intArrayOf(4, 5, 1), intArrayOf(5, 6, 2), intArrayOf(6, 1, 1),
+                intArrayOf(3, 7, 1), intArrayOf(7, 8, 2), intArrayOf(7, 9, 1)
+            )
             val sb = StringBuilder()
-            sb.append("MoleculeDrawer\n  MoleculeDrawer  2D\n\n")
-            sb.append(String.format(java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d V2000", 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 999)).append("\n")
-            for (i in 0 until 6) {
-                sb.append(String.format(java.util.Locale.US, "%10.4f%10.4f%10.4f %-3s 0  0  0  0  0  0  0  0  0  0  0  0", xs[i], ys[i], 0f, names[i])).append("\n")
+            sb.append("BenzoicAcidTest\n  MoleculeDrawer  2D\n\n")
+            sb.append(String.format(java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d V2000", 9, 9, 0, 0, 0, 0, 0, 0, 0, 0, 999)).append("\n")
+            for (i in 0 until 9) {
+                sb.append(String.format(java.util.Locale.US, "%10.4f%10.4f%10.4f %-3s 0  0  0  0  0  0  0  0  0  0  0  0", xs[i], ys[i], 0f, el[i])).append("\n")
             }
-            for (i in 0 until 6) {
-                sb.append(String.format(java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d", i + 1, (i + 1) % 6 + 1, if (i % 2 == 0) 2 else 1, 0, 0, 0, 0)).append("\n")
+            for (b in bonds) {
+                sb.append(String.format(java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d", b[0], b[1], b[2], 0, 0, 0, 0)).append("\n")
             }
             sb.append("M  END\n")
             s.chemicalPasteMol = sb.toString()
             s.showChemicalSearch = true
         }
+    }
     }
     val toast = remember { android.widget.Toast::class }
 

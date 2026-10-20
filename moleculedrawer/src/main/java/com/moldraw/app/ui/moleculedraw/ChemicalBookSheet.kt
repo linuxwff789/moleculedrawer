@@ -176,18 +176,44 @@ private fun fillMolJs(mol: String): String {
     (function (mol) {
       var ta = document.getElementById('mol');
       if (ta) ta.value = mol;
+      function countAtoms(m) {
+        try {
+          var L = String(m).split('\n');
+          var c = L[3].trim().split(/\s+/);
+          return 'atoms=' + c[0] + ' bonds=' + c[1];
+        } catch (e) { return 'unparsed'; }
+      }
+      function readback(k) {
+        try {
+          var out = k.getMolfile();
+          if (out && out.then) out.then(function (m) { console.log('[CB] readback ' + countAtoms(m)); })
+                                    .catch(function (e) { console.log('[CB] readback failed ' + e); });
+          else console.log('[CB] readback ' + countAtoms(out));
+        } catch (e) { console.log('[CB] readback error ' + e); }
+      }
       var tries = 0;
       var timer = setInterval(function () {
         tries++;
-        var done = false;
+        var k = null;
         try {
           var f = document.getElementById('ketcherFrame');
-          var k = f && f.contentWindow && f.contentWindow.ketcher;
-          if (k && k.setMolecule) { k.setMolecule(mol); done = true; }
-        } catch (e) {}
-        try { if (!done && typeof loadMol2 === 'function') { loadMol2(); done = true; } } catch (e) {}
-        if (done) { clearInterval(timer); console.log('[CB] mol filled'); }
-        else if (tries > 20) { clearInterval(timer); console.log('[CB] ketcher timeout'); }
+          k = f && f.contentWindow && f.contentWindow.ketcher;
+        } catch (e) { console.log('[CB] frame access error ' + e); }
+        if (!k) {
+          if (tries > 40) { clearInterval(timer); console.log('[CB] ketcher not found'); }
+          return;
+        }
+        clearInterval(timer);
+        console.log('[CB] ketcher api set=' + (typeof k.setMolecule) + ' get=' + (typeof k.getMolfile));
+        try {
+          var r = k.setMolecule(mol);
+          if (r && r.then) {
+            r.then(function () { console.log('[CB] setMolecule ok'); setTimeout(function () { readback(k); }, 800); })
+             .catch(function (e) { console.log('[CB] setMolecule rejected: ' + e); });
+          } else {
+            setTimeout(function () { readback(k); }, 800);
+          }
+        } catch (e) { console.log('[CB] setMolecule threw: ' + e); }
       }, 400);
       return 'queued';
     })($q)

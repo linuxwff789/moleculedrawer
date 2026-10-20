@@ -65,7 +65,7 @@ data class MoleculeData(val atoms: List<MoleculeAtom> = emptyList(), val bonds: 
         sb.appendLine("  MoleculeDrawer  2D")
         sb.appendLine("")
         // 计数行是定宽格式：11 个 3 字符字段 + " V2000"，版本号必须落在第 34~39 列。
-        // 用字符串拼接（"  ${'$'}n  ${'$'}b ..."）时两位数/三位数会把整行推宽，
+        // 用字符串拼接（"  $n  $b ..."）时两位数/三位数会把整行推宽，
         // ChemicalBook 之类严格的解析器就读成 "99 V20"。
         sb.appendLine(
             String.format(

@@ -192,8 +192,12 @@ private fun fillMolJs(mol: String): String {
             f.style.visibility = 'visible';
             f.style.display = 'block';
             f.style.width = '100%';
-            f.style.height = '62vh';
-            f.style.minHeight = '420px';
+            // 撑满剩余视口（页面顶部有站点头部/面包屑，别只给 62vh）
+            var topPx = 0;
+            try { topPx = Math.max(0, f.getBoundingClientRect().top); } catch (e) {}
+            var hPx = Math.max(360, Math.round(window.innerHeight - topPx - 70));
+            f.style.height = hPx + 'px';
+            f.style.minHeight = '360px';
             f.contentWindow.dispatchEvent(new Event('resize'));
           }
         } catch (e) { console.log('[CB] reveal error ' + e); }

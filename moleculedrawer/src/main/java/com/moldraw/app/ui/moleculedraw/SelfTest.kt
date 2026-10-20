@@ -283,8 +283,21 @@ fun runSelfTest(context: Context) {
             val avg = lens.average().toFloat()
             val maxAbs = coords.maxOf { kotlin.math.max(kotlin.math.abs(it.first), kotlin.math.abs(it.second)) }
             val ok = avg in 1.4f..1.6f && maxAbs < 10f
-            if (ok) pass++ else fail++
-            log("SELFTEST MOL_SCALE ${if (ok) "PASS" else "FAIL"} avgBond=$avg maxCoord=$maxAbs")
+            // 大分子：坐标范围必须被压到画布内（14 x 8.5 单位）
+            val big = (0 until 30).map { i -> MoleculeAtom(i + 1, i * 55f, (i % 2) * 40f, Element.C) }
+            val bigBonds = (0 until 29).map { i -> MoleculeBond(i + 1, i + 1, i + 2, BondType.SINGLE) }
+            val bigMol = MoleculeData(big, bigBonds).toMol().lines()
+            val bcoords = (0 until 30).map {
+                val l = bigMol[4 + it]
+                l.substring(0, 10).trim().toFloat() to l.substring(10, 20).trim().toFloat()
+            }
+            val bw = bcoords.maxOf { it.first } - bcoords.minOf { it.first }
+            val bh = bcoords.maxOf { it.second } - bcoords.minOf { it.second }
+            val fitOk = bw <= 14.2f && bh <= 8.7f
+            if (!fitOk) { /* 计入下面的失败 */ }
+            val allOk = ok && fitOk
+            if (allOk) pass++ else fail++
+            log("SELFTEST MOL_SCALE ${if (allOk) "PASS" else "FAIL"} avgBond=$avg maxCoord=$maxAbs big30=%.1fx%.1f".format(bw, bh))
         }
 
         log("SELFTEST SUMMARY pass=$pass fail=$fail")

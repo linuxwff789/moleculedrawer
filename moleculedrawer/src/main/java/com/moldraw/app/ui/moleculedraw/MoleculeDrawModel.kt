@@ -81,7 +81,14 @@ data class MoleculeData(val atoms: List<MoleculeAtom> = emptyList(), val bonds: 
             if (a1 != null && a2 != null) kotlin.math.hypot(a2.x - a1.x, a2.y - a1.y) else null
         }.filter { it > 1f }
         val avg = if (lens.isNotEmpty()) lens.average().toFloat() else BOND_LENGTH
-        val k = if (avg > 0.01f) 1.5f / avg else 1f
+        // 两个约束取小值：
+        //  ① 键长归一化到 1.5（Ketcher/ChemDraw 的常规尺度）
+        //  ② 整张图必须塞得进画布——Ketcher 约 40px/单位，手机上的画布约 560x340px，
+        //     所以坐标范围控制在 14 x 8.5 单位内，否则大分子会顶出可视区、手动也缩不回来
+        val bw = if (atoms.isEmpty()) 1f else (atoms.maxOf { it.x } - atoms.minOf { it.x }).coerceAtLeast(1f)
+        val bh = if (atoms.isEmpty()) 1f else (atoms.maxOf { it.y } - atoms.minOf { it.y }).coerceAtLeast(1f)
+        val kFit = minOf(14f / bw, 8.5f / bh)
+        val k = minOf(if (avg > 0.01f) 1.5f / avg else 1f, kFit)
         for (a in atoms) {
             val xStr = String.format(java.util.Locale.US, "%10.4f", a.x * k)
             val yStr = String.format(java.util.Locale.US, "%10.4f", a.y * k)

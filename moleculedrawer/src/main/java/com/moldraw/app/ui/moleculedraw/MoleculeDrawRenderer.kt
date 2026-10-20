@@ -145,12 +145,11 @@ fun offsetSide(
  * 该键所在的最短环（BFS 找 a1→a2 的替代路径），返回环上原子的坐标序列（按环序）。
  * 3~8 个原子视为环；不成环返回 null。
  */
-fun ringPathForBond(
-    atoms: List<MoleculeAtom>,
+fun ringPathIdsForBond(
     bonds: List<MoleculeBond>,
     id1: Int, id2: Int,
     maxPath: Int = 8
-): List<Pair<Float, Float>>? {
+): List<Int>? {
     val adj = HashMap<Int, MutableList<Int>>()
     for (b in bonds) {
         if ((b.atom1 == id1 && b.atom2 == id2) || (b.atom1 == id2 && b.atom2 == id1)) continue
@@ -175,8 +174,19 @@ fun ringPathForBond(
         cur = prev[cur] ?: break
     }
     if (path.size < 3 || path.size > maxPath) return null
-    val pts = path.mapNotNull { id -> atoms.find { it.id == id } }
-    if (pts.size != path.size) return null
+    return path
+}
+
+/** 环路径坐标（原始模型坐标） */
+fun ringPathForBond(
+    atoms: List<MoleculeAtom>,
+    bonds: List<MoleculeBond>,
+    id1: Int, id2: Int,
+    maxPath: Int = 8
+): List<Pair<Float, Float>>? {
+    val ids = ringPathIdsForBond(bonds, id1, id2, maxPath) ?: return null
+    val pts = ids.mapNotNull { id -> atoms.find { it.id == id } }
+    if (pts.size != ids.size) return null
     return pts.map { it.x to it.y }
 }
 

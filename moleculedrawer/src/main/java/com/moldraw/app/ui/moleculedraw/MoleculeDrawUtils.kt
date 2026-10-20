@@ -973,7 +973,7 @@ fun shareBitmap(
             BondType.DOUBLE -> {
                 val (l1, l2) = doubleBondSegments(
                     sx, sy, ex, ey, ux, uy, len,
-                    ringPathForBond(atoms, bonds, a1.id, a2.id),
+                    ringPathForBond(atoms, bonds, a1.id, a2.id)?.map { (it.first + offsetX) to (it.second + offsetY) },
                     isTerminalDouble(bonds, a1.id, a2.id)
                 )
                 canvas.drawLine(l1[0], l1[1], l1[2], l1[3], strokePaint)

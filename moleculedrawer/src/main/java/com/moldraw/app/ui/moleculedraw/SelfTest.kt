@@ -187,6 +187,23 @@ fun runSelfTest(context: Context) {
             if (allIn) pass++ else fail++
             log("SELFTEST DBOND_RING ${if (allIn) "PASS" else "FAIL"} n=$n$detail")
         }
+        // 平移不变性：整张图平移到负坐标区（画布常有的状态），短线仍要在环内
+        run {
+            val (aa0, bb) = ring(6, 300f, 300f, BOND_LENGTH, setOf(1, 3, 5))
+            val aa = aa0.map { MoleculeAtom(it.id, it.x - 520f, it.y - 760f, it.element) }.toMutableList()
+            var ok = true
+            for (b in bb.filter { it.type == BondType.DOUBLE }) {
+                val a1 = aa.first { it.id == b.atom1 }; val a2 = aa.first { it.id == b.atom2 }
+                val poly = ringPathForBond(aa, bb, a1.id, a2.id)
+                val dx = a2.x - a1.x; val dy = a2.y - a1.y
+                val len = kotlin.math.hypot(dx, dy); val ux = dx / len; val uy = dy / len
+                val (_, l2) = doubleBondSegments(a1.x, a1.y, a2.x, a2.y, ux, uy, len, poly, false)
+                val px = (l2[0] + l2[2]) / 2f; val py = (l2[1] + l2[3]) / 2f
+                if (poly == null || !pointInPolygon(px, py, poly)) ok = false
+            }
+            if (ok) pass++ else fail++
+            log("SELFTEST DBOND_SHIFT ${if (ok) "PASS" else "FAIL"}")
+        }
         // 稠环（两个四元环共用一条边 2-3）：共用键两侧都是环，短线也必须落在环内
         run {
             val as_ = mutableListOf(

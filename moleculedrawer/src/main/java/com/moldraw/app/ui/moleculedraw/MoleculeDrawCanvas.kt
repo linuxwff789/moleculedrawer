@@ -143,7 +143,9 @@ fun DrawScope.drawCanvasContent(
             b.type,
             box1 = labelBoxes[a1.id],
             box2 = labelBoxes[a2.id],
-            ringPoly = ringPathForBond(atoms, bonds, a1.id, a2.id),
+            ringPoly = ringPathIdsForBond(bonds, a1.id, a2.id)?.mapNotNull { id ->
+                atoms.find { it.id == id }
+            }?.map { a -> transformX(a) to transformY(a) },
             terminal = isTerminalDouble(bonds, a1.id, a2.id)
         )
     }

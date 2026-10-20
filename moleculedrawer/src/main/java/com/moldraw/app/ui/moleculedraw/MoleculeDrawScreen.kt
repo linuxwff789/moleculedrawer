@@ -513,7 +513,17 @@ loadWorkspaceJson(text, s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle =
                 val exportAtoms = if (s.selectedIds.isNotEmpty()) s.atoms.filter { it.id in s.selectedIds } else s.atoms.toList()
                 val exportSet = exportAtoms.map { it.id }.toSet()
                 val exportBonds = s.bonds.filter { it.atom1 in exportSet && it.atom2 in exportSet }
-                MoleculeExportDialog(atoms = exportAtoms, bonds = exportBonds, annotations = s.annotations, layoutEngine = layoutEngine, showExportDialog = s.showExportDialog, onDismiss = { s.showExportDialog = false }, benzeneStyle = s.benzeneStyle)
+                MoleculeExportDialog(
+                    atoms = exportAtoms, bonds = exportBonds, annotations = s.annotations,
+                    layoutEngine = layoutEngine, showExportDialog = s.showExportDialog,
+                    onDismiss = { s.showExportDialog = false },
+                    benzeneStyle = s.benzeneStyle,
+                    onSearchChemical = { smi ->
+                        s.chemicalInitialQuery = smi
+                        s.showExportDialog = false
+                        s.showChemicalSearch = true
+                    }
+                )
 
 // 保存文件对话框（让用户通过 SAF 选择保存位置）
 if (s.showSaveDialog) {
@@ -598,7 +608,8 @@ if (s.showSaveDialog) {
             atoms = s.atoms, bonds = s.bonds, annotations = s.annotations,
             selectedIds = s.selectedIds.toMutableSet(), layoutEngine = layoutEngine,
             canvasSizePx = s.canvasSizePx,
-            onDismiss = { s.showChemicalSearch = false }
+            initialQuery = s.chemicalInitialQuery,
+            onDismiss = { s.showChemicalSearch = false; s.chemicalInitialQuery = "" }
         )
     }
 

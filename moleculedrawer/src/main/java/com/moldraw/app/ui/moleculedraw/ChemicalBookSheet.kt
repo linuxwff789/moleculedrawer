@@ -194,6 +194,7 @@ fun ChemicalBookSheet(
     selectedIds: MutableSet<Int>,
     layoutEngine: MoleculeLayoutEngine?,
     canvasSizePx: Size,
+    initialQuery: String = "",
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -204,6 +205,7 @@ fun ChemicalBookSheet(
     var hit by remember { mutableStateOf<PcHit?>(null) }
     var reverseBusy by remember { mutableStateOf(false) }
     var autoFollow by remember { mutableStateOf(false) }
+    var pendingQuery by remember { mutableStateOf(initialQuery.trim()) }
     var web by remember { mutableStateOf<WebView?>(null) }
 
     fun doSniff(w: WebView) {
@@ -399,6 +401,18 @@ fun ChemicalBookSheet(
 
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         loading = false
+                                        if (pendingQuery.isNotBlank() && view != null) {
+                                            val q = pendingQuery
+                                            pendingQuery = ""
+                                            query = q
+                                            if (looksLikeSmiles(q)) lookupSmilesText(q, autoOpen = true)
+                                            else {
+                                                status = "搜索中…"
+                                                view.evaluateJavascript(submitSearchJs(q)) { r ->
+                                                    if (r != null && r.contains("no-field")) status = "页面上没找到搜索框，请手动输入"
+                                                }
+                                            }
+                                        }
                                         view?.let { doSniff(it) }
                                     }
                                 }

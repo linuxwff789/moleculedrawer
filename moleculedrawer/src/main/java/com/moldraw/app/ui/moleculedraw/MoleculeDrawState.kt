@@ -279,6 +279,7 @@ class MoleculeDrawState {
     var showMolecularWeight by mutableStateOf(false) // 在分子下方显示分子式/分子量
     var showImportDialog by mutableStateOf(false)
     var showChemicalSearch by mutableStateOf(false)
+    var chemicalInitialQuery by mutableStateOf("")
     var importInput by mutableStateOf("")
     var showExportDialog by mutableStateOf(false)
     // 项目文件保存/打开相关

@@ -44,7 +44,8 @@ fun MoleculeExportDialog(
     layoutEngine: Any?,
     showExportDialog: Boolean,
     onDismiss: () -> Unit,
-    benzeneStyle: BenzeneStyle = BenzeneStyle.KEKULE
+    benzeneStyle: BenzeneStyle = BenzeneStyle.KEKULE,
+    onSearchChemical: (String) -> Unit = {}
 ) {
     if (!showExportDialog) return
 
@@ -146,6 +147,17 @@ fun MoleculeExportDialog(
                         clip.setPrimaryClip(ClipData.newPlainText("smiles", smiles))
                     }, modifier = Modifier.size(32.dp)) {
                         Icon(Icons.Default.ContentCopy, "复制", tint = Color(0xFF555555), modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                if (smiles.isNotBlank()) {
+                    TextButton(
+                        onClick = { onSearchChemical(smiles) },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Default.Public, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("在 ChemicalBook 查这个结构", fontSize = 12.sp)
                     }
                 }
 

@@ -246,6 +246,23 @@ fun runSelfTest(context: Context) {
             log("SELFTEST DBOND_TERMINAL ${if (ok) "PASS" else "FAIL"} len1=$len1 len2=$len2")
         }
 
+        // ── V2000 定宽格式：两位数/三位数的原子把计数行推宽，会让严格解析器读成 "99 V20" ──
+        for ((n, m) in listOf(7 to 7, 37 to 41, 120 to 130)) {
+            val as_ = (1..n).map { i -> MoleculeAtom(i, i * 1f, 0f, Element.C) }
+            val bs = (1 until m + 1).map { i -> MoleculeBond(i, (i % n) + 1, ((i + 1) % n) + 1, BondType.SINGLE) }
+            val mol = MoleculeData(as_, bs).toMol()
+            val lines = mol.lines()
+            val counts = lines[3]
+            val countersOk = counts.length == 39 && counts.substring(33, 39) == " V2000"
+            val atomOk = lines[4].length == 69 && lines[4].substring(31, 34).trim() == "C"
+            val bondLine = lines[4 + n]
+            val bondOk = bondLine.length == 21 && bondLine.substring(0, 3).trim().toIntOrNull() != null
+            val endOk = lines[4 + n + m].trim() == "M  END"
+            val ok = countersOk && atomOk && bondOk && endOk
+            if (ok) pass++ else fail++
+            log("SELFTEST MOL_V2000 ${if (ok) "PASS" else "FAIL"} n=$n m=$m counts='${counts}' len=${counts.length} atomLen=${lines[4].length} bondLen=${bondLine.length}")
+        }
+
         log("SELFTEST SUMMARY pass=$pass fail=$fail")
     } catch (e: Exception) {
         log("SELFTEST EXCEPTION ${e::class.simpleName}: ${e.message}")

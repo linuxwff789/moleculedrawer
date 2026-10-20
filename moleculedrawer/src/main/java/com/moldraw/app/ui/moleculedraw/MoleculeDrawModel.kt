@@ -61,24 +61,39 @@ data class TransformGroup(
 data class MoleculeData(val atoms: List<MoleculeAtom> = emptyList(), val bonds: List<MoleculeBond> = emptyList(), val annotations: List<MoleculeAnnotation> = emptyList(), val selectedIndices: Set<Int> = emptySet(), val benzeneStyle: BenzeneStyle = BenzeneStyle.KEKULE) {
     fun toMol(): String {
         val sb = StringBuilder()
+        sb.appendLine("MoleculeDrawer")
+        sb.appendLine("  MoleculeDrawer  2D")
         sb.appendLine("")
-        sb.appendLine("  ChemELN")
-        sb.appendLine("")
-        sb.appendLine("  ${atoms.size}  ${bonds.size}  0  0  0  0  0  0  0  0999 V2000")
+        // 计数行是定宽格式：11 个 3 字符字段 + " V2000"，版本号必须落在第 34~39 列。
+        // 用字符串拼接（"  ${'$'}n  ${'$'}b ..."）时两位数/三位数会把整行推宽，
+        // ChemicalBook 之类严格的解析器就读成 "99 V20"。
+        sb.appendLine(
+            String.format(
+                java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d V2000",
+                atoms.size, bonds.size, 0, 0, 0, 0, 0, 0, 0, 0, 999
+            )
+        )
         for (a in atoms) {
-            // V2000 格式要求坐标固定10字符宽，右对齐
-            val xStr = "%10.4f".format(a.x)
-            val yStr = "%10.4f".format(a.y)
-            val zStr = "    0.0000"  // 固定11字符
-            val elemPadded = a.element.symbol.padEnd(3) // 元素符号占3字符
-            sb.appendLine("$xStr$yStr$zStr $elemPadded 0  0  0  0  0  0  0  0  0  0  0  0")
+            val xStr = String.format(java.util.Locale.US, "%10.4f", a.x)
+            val yStr = String.format(java.util.Locale.US, "%10.4f", a.y)
+            val zStr = String.format(java.util.Locale.US, "%10.4f", 0f)
+            val elemPadded = a.element.symbol.padEnd(3)
+            // 坐标(30) + 空格 + 元素(3) + 12 个定宽字段
+            sb.append(xStr).append(yStr).append(zStr).append(' ').append(elemPadded)
+            sb.append(" 0  0  0  0  0  0  0  0  0  0  0  0\n")
         }
         for (b in bonds) {
             val a1 = atoms.indexOfFirst { it.id == b.atom1 } + 1
             val a2 = atoms.indexOfFirst { it.id == b.atom2 } + 1
             val order = when (b.type) { BondType.SINGLE -> 1; BondType.DOUBLE -> 2; BondType.TRIPLE -> 3; BondType.WEDGE_UP -> 1; BondType.WEDGE_DOWN -> 1; BondType.AROMATIC -> 4 }
             val stereo = when (b.type) { BondType.WEDGE_UP -> 1; BondType.WEDGE_DOWN -> 6; else -> 0 }
-            sb.appendLine("  $a1  $a2  $order  $stereo  0  0  0")
+            sb.append(
+                String.format(
+                    java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d",
+                    a1, a2, order, stereo, 0, 0, 0
+                )
+            )
+            sb.append('\n')
         }
         sb.appendLine("M  END")
         return sb.toString()

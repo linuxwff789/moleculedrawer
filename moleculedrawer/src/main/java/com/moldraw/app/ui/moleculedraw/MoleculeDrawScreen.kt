@@ -785,6 +785,11 @@ if (s.showSaveDialog) {
                             onClick = { menuExpanded = false; s.showChemicalSearch = true }
                         )
                         DropdownMenuItem(
+                            text = { Text("粘贴（剪贴板）", fontSize = 13.sp) },
+                            leadingIcon = { Icon(Icons.Default.ContentPaste, null, modifier = Modifier.size(18.dp)) },
+                            onClick = { menuExpanded = false; pasteFromClipboard(s, context) }
+                        )
+                        DropdownMenuItem(
                             text = { Text("导出图片 / 文件", fontSize = 13.sp) },
                             leadingIcon = { Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)) },
                             onClick = { menuExpanded = false; s.showExportDialog = true }

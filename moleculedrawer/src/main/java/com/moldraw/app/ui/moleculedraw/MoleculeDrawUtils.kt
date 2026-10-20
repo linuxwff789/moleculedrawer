@@ -1723,3 +1723,51 @@ fun cleanupExpandedAtoms(
         }
     }
 }
+
+/**
+ * 从系统剪贴板粘贴结构（moldraw JSON）。不依赖选区、不依赖当前文档，
+ * 新文档/空的画布都能用；保留官能团缩写等字段，只换 id 并偏移 30px。
+ */
+fun pasteFromClipboard(s: MoleculeDrawState, context: android.content.Context) {
+    val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+        as android.content.ClipboardManager
+    val text = cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
+    if (text == null || !text.trimStart().startsWith("{")) {
+        android.widget.Toast.makeText(context, "剪贴板里没有可粘贴的结构", android.widget.Toast.LENGTH_SHORT).show()
+        return
+    }
+    val tempAtoms = mutableListOf<MoleculeAtom>()
+    val tempBonds = mutableListOf<MoleculeBond>()
+    val tempAnnotations = mutableListOf<MoleculeAnnotation>()
+    runCatching { loadWorkspaceJson(text, tempAtoms, tempBonds, tempAnnotations) }
+    if (tempAtoms.isEmpty() && tempAnnotations.isEmpty()) {
+        android.widget.Toast.makeText(context, "剪贴板内容无法解析", android.widget.Toast.LENGTH_SHORT).show()
+        return
+    }
+    s.pushUndo()
+    val maxId = maxOf(
+        s.atoms.maxOfOrNull { it.id } ?: 0,
+        s.annotations.maxOfOrNull { it.id } ?: 0
+    )
+    val idOffset = maxId + 1
+    val idMap = mutableMapOf<Int, Int>()
+    val newAtoms = tempAtoms.map { a ->
+        val newId = a.id + idOffset
+        idMap[a.id] = newId
+        a.copy(id = newId, x = a.x + 30f, y = a.y + 30f)
+    }
+    val newAnn = tempAnnotations.map { a ->
+        a.copy(id = a.id + idOffset, x = a.x + 30f, y = a.y + 30f,
+            endX = a.endX + 30f, endY = a.endY + 30f)
+    }
+    val newBonds = tempBonds.map { b ->
+        MoleculeBond(b.id + idOffset, idMap[b.atom1] ?: b.atom1, idMap[b.atom2] ?: b.atom2, b.type)
+    }
+    s.atoms.addAll(newAtoms)
+    s.bonds.addAll(newBonds)
+    s.annotations.addAll(newAnn)
+    s.selectedIds = newAtoms.map { it.id }.toSet() + newAnn.map { -it.id }.toSet()
+    s.tool = DrawTool.SELECT
+    gNextId = (maxOf(s.atoms.maxOfOrNull { it.id } ?: 0, s.bonds.maxOfOrNull { it.id } ?: 0)) + 1
+    android.widget.Toast.makeText(context, "已粘贴 ${newAtoms.size} 个原子, ${newAnn.size} 个标注", android.widget.Toast.LENGTH_SHORT).show()
+}

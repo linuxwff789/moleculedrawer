@@ -430,43 +430,10 @@ fun MoleculeContextBar(
                         s.selectedIds = emptySet(); s.activeGroup = null
                         android.widget.Toast.makeText(context, "已剪切 ${atomList.size} 个原子, ${annList.size} 个标注", android.widget.Toast.LENGTH_SHORT).show()
                     }
-                    SmallIconButton(Icons.Default.ContentPaste, "粘贴") {
-                        val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clipData = clip.primaryClip ?: return@SmallIconButton
-                        if (clipData.itemCount > 0) {
-                            val text = clipData.getItemAt(0).text?.toString() ?: return@SmallIconButton
-                            if (text.trimStart().startsWith("{")) {
-                                s.pushUndo()
-                                val tempAtoms = mutableListOf<MoleculeAtom>()
-                                val tempBonds = mutableListOf<MoleculeBond>()
-                                val tempAnnotations = mutableListOf<MoleculeAnnotation>()
-                                loadWorkspaceJson(text, tempAtoms, tempBonds, tempAnnotations)
-                                if (tempAtoms.isNotEmpty() || tempAnnotations.isNotEmpty()) {
-                                    val maxId = s.atoms.maxOfOrNull { it.id }?.coerceAtLeast(s.annotations.maxOfOrNull { it.id } ?: 0) ?: 0
-                                    val idOffset = maxId + 1
-                                    val idMap = mutableMapOf<Int, Int>()
-                                    val newAtoms = tempAtoms.map { a ->
-                                        val newId = a.id + idOffset
-                                        idMap[a.id] = newId
-                                        MoleculeAtom(newId, a.x + 30f, a.y + 30f, a.element, a.aromatic)
-                                    }
-                                    val newAnn = tempAnnotations.map { a ->
-                                        MoleculeAnnotation(a.id + idOffset, a.type, a.x + 30f, a.y + 30f, a.text, a.endX + 30f, a.endY + 30f, a.scale)
-                                    }
-                                    val newBonds = tempBonds.map { b ->
-                                        MoleculeBond(b.id + idOffset, idMap[b.atom1] ?: b.atom1, idMap[b.atom2] ?: b.atom2, b.type)
-                                    }
-                                    s.atoms.addAll(newAtoms)
-                                    s.bonds.addAll(newBonds)
-                                    s.annotations.addAll(newAnn)
-                                    s.selectedIds = newAtoms.map { it.id }.toSet() + newAnn.map { -it.id }.toSet()
-                                    android.widget.Toast.makeText(context, "已粘贴 ${newAtoms.size} 个原子, ${newAnn.size} 个标注", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        }
-                    }
                     ToolChip(selected = false, label = "取消选择", onClick = { s.selectedIds = emptySet(); s.collapseGroup(); s.activeGroup = null })
                 }
+                // 粘贴不依赖选区：新文档里也能用
+                SmallIconButton(Icons.Default.ContentPaste, "粘贴") { pasteFromClipboard(s, context) }
                 if (s.selectedIds.size >= 2) {
                     ToolChip(selected = false, label = "水平翻转", onClick = { s.pushUndo(); s.collapseGroup(); s.flipToast = s.selection.flipHorizontal() }) {
                         Icon(Icons.Default.SwapHoriz, null, modifier = Modifier.size(14.dp))

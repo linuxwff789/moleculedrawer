@@ -511,7 +511,17 @@ fun ChemicalBookSheet(
                                 settings.loadWithOverviewMode = true
                                 webChromeClient = object : android.webkit.WebChromeClient() {
                                     override fun onConsoleMessage(m: android.webkit.ConsoleMessage?): Boolean {
-                                        android.util.Log.d("MOLDRAW_DEBUG", "[CB] console: ${m?.message()}")
+                                        val msg = m?.message().orEmpty()
+                                        android.util.Log.d("MOLDRAW_DEBUG", "[CB] console: $msg")
+                                        // 把注入结果反映到底部提示条，别一直显示"正在填入"
+                                        when {
+                                            msg.contains("mol filled") ->
+                                                status = "结构已填入编辑器，选好搜索类型后点「立即搜索」"
+                                            msg.contains("ketcher not found") ->
+                                                status = "编辑器没加载出来，点右上角返回箭头重新进一次"
+                                            msg.contains("setMolecule rejected") ->
+                                                status = "编辑器拒绝了这份 molfile：$msg"
+                                        }
                                         return true
                                     }
                                 }

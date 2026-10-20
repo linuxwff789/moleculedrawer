@@ -160,14 +160,6 @@ private data class Sniffed(
         }
 }
 
-/**
- * 页面嗅探脚本。ChemicalBook 的页面形态很多，这里按"能拿到就行"做宽匹配：
- *  - MOL 链接：/CAS/mol/{CAS}.mol、/CAS/{yyyyMMdd}/mol/{CAS}.mol、任何 *.mol/*.sdf
- *  - SMILES：桌面版 <th>SMILES</th><td>…</td>、移动版 <li><span>SMILES :</span>…</li>，
- *    标签可能带全角冒号、空格，值也可能在兄弟节点里
- *  - InChIKey：兜底，拿去 PubChem 换 SMILES
- *  - CAS：从 mol 链接里解析，其次全文匹配 NNNN-NN-N
- */
 /** 页面脚本放在 res/raw/cb_scripts.js：Kotlin 字符串里塞 JS 太容易踩转义 */
 private fun cbScripts(ctx: android.content.Context): String =
     runCatching {

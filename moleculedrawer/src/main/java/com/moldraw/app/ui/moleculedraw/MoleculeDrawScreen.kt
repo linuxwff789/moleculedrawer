@@ -193,7 +193,7 @@ fun MoleculeDrawApp(
             s.chemicalInitialQuery = ""
             s.chemicalPasteMol = ""
             s.chemicalDirectUrl = directUrl
-            s.chemicalAutoImport = it0.hasExtra("moldraw_cb_import")
+            s.chemicalAutoImport = it0?.hasExtra("moldraw_cb_import") == true
             s.showChemicalSearch = true
         }
         val molFile = it0?.getStringExtra("moldraw_cb_mol_file") ?: ""

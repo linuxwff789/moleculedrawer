@@ -204,29 +204,39 @@ private fun fillMolJs(mol: String): String {
         catch (e) { return 'unparsed'; }
       }
 
-      // 画布内容是否真的落在可见区域：结构 bbox 和 svg 视口对比
+      // 画布内容是否真的落在可见区域：把每个 path 的屏幕坐标算出来，取并集和视口比较
       function canvasInfo() {
         try {
           var inner = frame().contentWindow;
           var svg = inner.document.querySelector('svg');
           if (!svg) return 'no-svg';
-          var r = svg.getBoundingClientRect();
+          var vr = svg.getBoundingClientRect();
           var paths = svg.querySelectorAll('path,line,polyline,polygon');
-          var n = 0, minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
+          var n = 0, minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, sumSpan = 0, cnt = 0;
           for (var i = 0; i < paths.length; i++) {
-            try {
-              var b = paths[i].getBBox();
-              if (b.width > 0.5 || b.height > 0.5) {
-                n++;
-                if (b.x < minx) minx = b.x;
-                if (b.y < miny) miny = b.y;
-                if (b.x + b.width > maxx) maxx = b.x + b.width;
-                if (b.y + b.height > maxy) maxy = b.y + b.height;
-              }
-            } catch (e) {}
+            var el = paths[i], bb, m;
+            try { bb = el.getBBox(); m = el.getScreenCTM(); } catch (e) { continue; }
+            if (!m || (!(bb.width > 0.3) && !(bb.height > 0.3))) continue;
+            var xs = [], ys = [];
+            var pts = [[bb.x, bb.y], [bb.x + bb.width, bb.y], [bb.x, bb.y + bb.height], [bb.x + bb.width, bb.y + bb.height]];
+            for (var j = 0; j < 4; j++) {
+              xs.push(m.a * pts[j][0] + m.c * pts[j][1] + m.e);
+              ys.push(m.b * pts[j][0] + m.d * pts[j][1] + m.f);
+            }
+            var x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
+            var x1 = Math.max.apply(null, xs), y1 = Math.max.apply(null, ys);
+            n++;
+            minx = Math.min(minx, x0); miny = Math.min(miny, y0);
+            maxx = Math.max(maxx, x1); maxy = Math.max(maxy, y1);
+            var span = Math.max(x1 - x0, y1 - y0);
+            if (span > 3) { sumSpan += span; cnt++; }
           }
-          return 'view=' + Math.round(r.width) + 'x' + Math.round(r.height) + ' paths=' + n +
-                 ' bbox=' + Math.round(minx) + ',' + Math.round(miny) + ',' + Math.round(maxx) + ',' + Math.round(maxy);
+          var overlapW = Math.max(0, Math.min(maxx, vr.right) - Math.max(minx, vr.left));
+          var overlapH = Math.max(0, Math.min(maxy, vr.bottom) - Math.max(miny, vr.top));
+          return 'view=' + Math.round(vr.width) + 'x' + Math.round(vr.height) + ' paths=' + n +
+                 ' bondPx=' + (cnt ? Math.round(sumSpan / cnt) : 0) +
+                 ' screenBox=' + [minx, miny, maxx, maxy].map(Math.round).join(',') +
+                 ' overlap=' + Math.round(overlapW) + 'x' + Math.round(overlapH);
         } catch (e) { return 'canvasInfo error ' + e; }
       }
 

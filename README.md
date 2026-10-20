@@ -5,11 +5,43 @@ MoleculeDrawer 是一款 Android 分子结构绘制应用，用于在移动端�
 ## 主要功能
 
 - 原子与化学键绘制：支持常见元素、单键、双键、三键、芳香键和立体键。
-- 结构编辑：支持选择、移动、删除、撤销、模板化绘制等编辑操作。
-- 标注能力：支持文本、箭头、功能团等结构注释。
+- 结构编辑：支持选择、移动、删除、撤销/重做、模板化绘制、双指缩放等编辑操作。
+- 绘制样式：经典 / 专业两套样式（专业样式对齐 ChemDraw：碳不画点、双键长短线、氢下标、标签白底）。
+- 官能团缩写：26 个常用基团按「单原子缩写」模型存储（同 ChemDraw abbreviation / MDL SUP sgroup），
+  末端碳替换、环上碳挂接，自动调整后标记不丢。
+- 标注能力：文本、箭头、功能团注释，支持自动下标。
+- **查结构**：内置 ChemicalBook 页面搜索中文名/英文名/CAS，从理化信息页提取结构导入画布。
+- **结构反查**：用画布生成的 SMILES 精确匹配 PubChem，得到名称 / CAS / 分子式 / 分子量；
+  也可把结构直接灌进 ChemicalBook 的结构式搜索（Ketcher）里。
 - JSON 工作区格式：使用 `moldraw` JSON 保存画布、原子、化学键和标注数据。
-- 导入导出：支持结构数据在独立应用和外部应用之间传递。
-- Indigo 支持：包含 Indigo 相关模块，用于扩展化学结构处理能力。
+- 导入导出：SMILES / Molfile（V2000、标准坐标尺度）/ PNG / SVG / PDF / moldraw JSON。
+- Indigo 支持：包含 Indigo 相关模块，用于布局、SMILES 生成与分子性质计算。
+
+## 查结构 / 反查的取数规则
+
+ChemicalBook 没有公开 API，中文站搜索是表单 POST，详情页对非浏览器请求返回 503，
+所以 App 用 WebView 走用户自己的浏览会话，只读取页面上已经公开展示的结构信息。结构来源按优先级：
+
+1. 页面上的 `.mol` / `.sdf` 链接（`/CAS/mol/{CAS}.mol`、`/CAS/{yyyyMMdd}/mol/{CAS}.mol` 等形态）
+2. 页面上标注的 SMILES
+3. 页面上的 InChIKey → PubChem 换取 SMILES
+4. 页面上的 CAS 号 → PubChem 换取 SMILES
+
+反方向（结构 → 名称）只能用 PubChem：`/rest/pug/compound/smiles/{smiles}/cids/JSON` 精确结构匹配，
+CAS 从 `xrefs/RegistryID` 里取。
+
+## 自测
+
+改完代码可以先跑无界面自测，不用一遍遍装机点屏幕：
+
+```bash
+adb shell am force-stop com.moldraw.app
+adb shell am start -n com.moldraw.app/.ui.moleculedraw.MoleculeDrawActivity --es moldraw_selftest 1
+adb shell run-as com.moldraw.app cat files/selftest.txt   # 或 logcat -s SELFTEST
+```
+
+覆盖：26 个官能团的展开/替换/放置语义、双键几何（环内/稠环/末端/C=O 等长）、
+V2000 定宽格式与坐标尺度、PubChem 反查。
 
 ## 项目结构
 

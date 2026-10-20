@@ -184,6 +184,27 @@ fun MoleculeDrawApp(
 ) {
     val s = remember { MoleculeDrawState() }
     val context = LocalContext.current
+    // 调试：am start ... --ez moldraw_cb_struct 1 → 打开结构式搜索并填入一个苯环 molfile
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val it0 = (context as? android.app.Activity)?.intent
+        if (it0?.hasExtra("moldraw_cb_struct") == true && !s.showChemicalSearch) {
+            val names = listOf("C", "C", "C", "C", "C", "C")
+            val xs = listOf(0f, 0.866f, 1.732f, 1.732f, 0.866f, 0f)
+            val ys = listOf(-1f, -0.5f, -0.5f, 0.5f, 1f, 0.5f)
+            val sb = StringBuilder()
+            sb.append("MoleculeDrawer\n  MoleculeDrawer  2D\n\n")
+            sb.append(String.format(java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d%3d V2000", 6, 6, 0, 0, 0, 0, 0, 0, 0, 0, 999)).append("\n")
+            for (i in 0 until 6) {
+                sb.append(String.format(java.util.Locale.US, "%10.4f%10.4f%10.4f %-3s 0  0  0  0  0  0  0  0  0  0  0  0", xs[i], ys[i], 0f, names[i])).append("\n")
+            }
+            for (i in 0 until 6) {
+                sb.append(String.format(java.util.Locale.US, "%3d%3d%3d%3d%3d%3d%3d", i + 1, (i + 1) % 6 + 1, if (i % 2 == 0) 2 else 1, 0, 0, 0, 0)).append("\n")
+            }
+            sb.append("M  END\n")
+            s.chemicalPasteMol = sb.toString()
+            s.showChemicalSearch = true
+        }
+    }
     val toast = remember { android.widget.Toast::class }
 
     // 当前编辑的文件 URI / 路径（传参得到）
@@ -520,6 +541,17 @@ loadWorkspaceJson(text, s.atoms, s.bonds, s.annotations)?.let { s.benzeneStyle =
                     benzeneStyle = s.benzeneStyle,
                     onSearchChemical = { smi ->
                         s.chemicalInitialQuery = smi
+                        s.chemicalPasteMol = ""
+                        s.showExportDialog = false
+                        s.showChemicalSearch = true
+                    },
+                    onSearchStructure = { mol ->
+                        // 同时放一份到剪贴板：万一注入失败，用户还能在网页里长按粘贴
+                        val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+                            as android.content.ClipboardManager
+                        clip.setPrimaryClip(android.content.ClipData.newPlainText("mol", mol))
+                        s.chemicalInitialQuery = ""
+                        s.chemicalPasteMol = mol
                         s.showExportDialog = false
                         s.showChemicalSearch = true
                     }
@@ -609,7 +641,8 @@ if (s.showSaveDialog) {
             selectedIds = s.selectedIds.toMutableSet(), layoutEngine = layoutEngine,
             canvasSizePx = s.canvasSizePx,
             initialQuery = s.chemicalInitialQuery,
-            onDismiss = { s.showChemicalSearch = false; s.chemicalInitialQuery = "" }
+            pasteMol = s.chemicalPasteMol,
+            onDismiss = { s.showChemicalSearch = false; s.chemicalInitialQuery = ""; s.chemicalPasteMol = "" }
         )
     }
 

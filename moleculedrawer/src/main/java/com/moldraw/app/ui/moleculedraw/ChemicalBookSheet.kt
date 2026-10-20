@@ -69,6 +69,7 @@ import java.net.URLEncoder
  * 公开展示的 SMILES 和 /CAS/mol/{CAS}.mol 下载地址，不做站内抓取队列。
  */
 private const val CB_HOME = "https://m.chemicalbook.com/"
+private const val CB_STRUCT_SEARCH = "https://m.chemicalbook.com/StructuredSearch.htm"
 private const val CB_UA =
     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) " +
         "Chrome/124.0.0.0 Mobile Safari/537.36"
@@ -168,6 +169,31 @@ private val SNIFF_JS = """
 })()
 """
 
+/** 把 molfile 灌进化学结构式搜索页（Ketcher 编辑器 + 站点的隐藏 textarea） */
+private fun fillMolJs(mol: String): String {
+    val q = JSONObject.quote(mol)
+    return """
+    (function (mol) {
+      var ta = document.getElementById('mol');
+      if (ta) ta.value = mol;
+      var tries = 0;
+      var timer = setInterval(function () {
+        tries++;
+        var done = false;
+        try {
+          var f = document.getElementById('ketcherFrame');
+          var k = f && f.contentWindow && f.contentWindow.ketcher;
+          if (k && k.setMolecule) { k.setMolecule(mol); done = true; }
+        } catch (e) {}
+        try { if (!done && typeof loadMol2 === 'function') { loadMol2(); done = true; } } catch (e) {}
+        if (done) { clearInterval(timer); console.log('[CB] mol filled'); }
+        else if (tries > 20) { clearInterval(timer); console.log('[CB] ketcher timeout'); }
+      }, 400);
+      return 'queued';
+    })($q)
+    """.trimIndent()
+}
+
 /** 把关键词填进站点自己的搜索框再提交（站点搜索只接受表单提交） */
 private fun submitSearchJs(query: String): String {
     val q = JSONObject.quote(query)
@@ -195,6 +221,7 @@ fun ChemicalBookSheet(
     layoutEngine: MoleculeLayoutEngine?,
     canvasSizePx: Size,
     initialQuery: String = "",
+    pasteMol: String = "",
     onDismiss: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
@@ -389,6 +416,12 @@ fun ChemicalBookSheet(
                                 settings.loadsImagesAutomatically = true
                                 settings.useWideViewPort = true
                                 settings.loadWithOverviewMode = true
+                                webChromeClient = object : android.webkit.WebChromeClient() {
+                                    override fun onConsoleMessage(m: android.webkit.ConsoleMessage?): Boolean {
+                                        android.util.Log.d("MOLDRAW_DEBUG", "[CB] console: ${'$'}{m?.message()}")
+                                        return true
+                                    }
+                                }
                                 webViewClient = object : WebViewClient() {
                                     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                                         loading = true
@@ -401,6 +434,13 @@ fun ChemicalBookSheet(
 
                                     override fun onPageFinished(view: WebView?, url: String?) {
                                         loading = false
+                                        if (pasteMol.isNotBlank() && view != null) {
+                                            status = "正在把 molfile 填进结构式搜索…"
+                                            view.evaluateJavascript(fillMolJs(pasteMol)) { r ->
+                                                android.util.Log.d("MOLDRAW_DEBUG", "[CB] fillMol r=$r")
+                                            }
+                                            sniffed = null
+                                        }
                                         if (pendingQuery.isNotBlank() && view != null) {
                                             val q = pendingQuery
                                             pendingQuery = ""
@@ -416,7 +456,7 @@ fun ChemicalBookSheet(
                                         view?.let { doSniff(it) }
                                     }
                                 }
-                                loadUrl(CB_HOME)
+                                loadUrl(if (pasteMol.isNotBlank()) CB_STRUCT_SEARCH else CB_HOME)
                                 web = this
                             }
                         }
@@ -510,6 +550,7 @@ fun ChemicalBookSheet(
                             Text(
                                 when {
                                     status.isNotEmpty() -> status
+                                    pasteMol.isNotBlank() -> "molfile 已填入结构式编辑器，点页面上的「立即搜索」即可（剪贴板里也放了一份）"
                                     else -> "搜到化合物后打开「理化信息」页即可导入；也可以反查当前画的结构"
                                 },
                                 fontSize = 12.sp, maxLines = 2, modifier = Modifier.weight(1f)

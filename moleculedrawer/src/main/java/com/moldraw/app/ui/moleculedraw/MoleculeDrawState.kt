@@ -280,6 +280,7 @@ class MoleculeDrawState {
     var showImportDialog by mutableStateOf(false)
     var showChemicalSearch by mutableStateOf(false)
     var chemicalInitialQuery by mutableStateOf("")
+    var chemicalPasteMol by mutableStateOf("")
     var importInput by mutableStateOf("")
     var showExportDialog by mutableStateOf(false)
     // 项目文件保存/打开相关

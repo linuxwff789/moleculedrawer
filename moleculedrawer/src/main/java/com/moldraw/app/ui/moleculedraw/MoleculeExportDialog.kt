@@ -45,7 +45,8 @@ fun MoleculeExportDialog(
     showExportDialog: Boolean,
     onDismiss: () -> Unit,
     benzeneStyle: BenzeneStyle = BenzeneStyle.KEKULE,
-    onSearchChemical: (String) -> Unit = {}
+    onSearchChemical: (String) -> Unit = {},
+    onSearchStructure: (String) -> Unit = {}
 ) {
     if (!showExportDialog) return
 
@@ -158,6 +159,16 @@ fun MoleculeExportDialog(
                         Icon(Icons.Default.Public, null, Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("在 ChemicalBook 查这个结构", fontSize = 12.sp)
+                    }
+                }
+                if (molStr.isNotBlank()) {
+                    TextButton(
+                        onClick = { onSearchStructure(molStr) },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Icon(Icons.Default.Search, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("结构式搜索（自动填入 molfile）", fontSize = 12.sp)
                     }
                 }
 

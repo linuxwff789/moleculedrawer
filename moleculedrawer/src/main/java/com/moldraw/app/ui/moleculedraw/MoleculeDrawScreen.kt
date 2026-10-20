@@ -211,7 +211,6 @@ fun MoleculeDrawApp(
             s.showChemicalSearch = true
         }
     }
-    }
     val toast = remember { android.widget.Toast::class }
 
     // 当前编辑的文件 URI / 路径（传参得到）

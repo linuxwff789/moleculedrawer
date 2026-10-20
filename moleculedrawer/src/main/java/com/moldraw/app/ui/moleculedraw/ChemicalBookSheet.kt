@@ -74,17 +74,6 @@ private const val CB_UA =
     "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) " +
         "Chrome/124.0.0.0 Mobile Safari/537.36"
 
-/** 页面上嗅探到的结构信息 */
-private data class Sniffed(
-    val smiles: String = "",
-    val cas: String = "",
-    val molUrl: String = "",
-    val propUrl: String = "",
-    val title: String = ""
-) {
-    val hasStructure: Boolean get() = molUrl.isNotEmpty() || smiles.isNotEmpty()
-}
-
 /** PubChem 反查结果 */
 internal data class PcHit(
     val cid: Int,
@@ -95,30 +84,30 @@ internal data class PcHit(
     val smiles: String
 )
 
+private fun cbHttpGet(url: String): String {
+    val c = (URL(url).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 15000
+        readTimeout = 20000
+        setRequestProperty("User-Agent", CB_UA)
+    }
+    return c.inputStream.bufferedReader().use { it.readText() }
+}
+
 /**
  * 用结构（SMILES）反查这是什么化合物：PubChem 精确结构匹配。
- * ChemicalBook 本身只支持名称/CAS 检索，所以结构 → 名称这一步只能走 PubChem，
- * 拿到 CAS 之后再回到站点里搜中文名/供应商。
+ * ChemicalBook 本身只支持名称/CAS 检索，所以结构 → 名称这步只能走 PubChem。
  */
 internal fun pubchemLookup(smiles: String): PcHit? = runCatching {
-    fun http(url: String): String {
-        val c = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15000
-            readTimeout = 20000
-            setRequestProperty("User-Agent", CB_UA)
-        }
-        return c.inputStream.bufferedReader().use { it.readText() }
-    }
     val enc = URLEncoder.encode(smiles, "UTF-8")
-    val cidsJson = JSONObject(http("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/$enc/cids/JSON"))
+    val cidsJson = JSONObject(cbHttpGet("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/smiles/$enc/cids/JSON"))
     val arr = cidsJson.optJSONObject("IdentifierList")?.optJSONArray("CID") ?: return null
     if (arr.length() == 0) return null
     val cid = arr.getInt(0)
     val propJson = JSONObject(
-        http("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/$cid/property/Title,IUPACName,MolecularFormula,MolecularWeight,ConnectivitySMILES/JSON")
+        cbHttpGet("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/$cid/property/Title,IUPACName,MolecularFormula,MolecularWeight,ConnectivitySMILES/JSON")
     )
     val p = propJson.optJSONObject("PropertyTable")?.optJSONArray("Properties")?.optJSONObject(0)
-    val xrefJson = JSONObject(http("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/$cid/xrefs/RegistryID/JSON"))
+    val xrefJson = JSONObject(cbHttpGet("https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/$cid/xrefs/RegistryID/JSON"))
     val regs = xrefJson.optJSONObject("InformationList")?.optJSONArray("Information")?.optJSONObject(0)
         ?.optJSONArray("RegistryID")
     var cas = ""
@@ -138,199 +127,107 @@ internal fun pubchemLookup(smiles: String): PcHit? = runCatching {
     )
 }.getOrNull()
 
-/** 在页面里找 SMILES 标签（桌面版 th/td、移动版 li>span）与 MOL 下载链接 */
+/** 用 InChIKey / CAS 从 PubChem 换 SMILES（页面既没 mol 也没 SMILES 时的兜底） */
+internal fun pubchemSmilesOf(query: String, byInchiKey: Boolean): String? = runCatching {
+    val enc = URLEncoder.encode(query, "UTF-8")
+    val url = if (byInchiKey)
+        "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/inchikey/$enc/property/ConnectivitySMILES/JSON"
+    else
+        "https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/$enc/property/ConnectivitySMILES/JSON"
+    val txt = cbHttpGet(url)
+    JSONObject(txt).optJSONObject("PropertyTable")?.optJSONArray("Properties")?.optJSONObject(0)
+        ?.optString("ConnectivitySMILES")?.takeIf { it.isNotBlank() }
+}.getOrNull()
+
+/** 页面上嗅探到的结构信息 */
+private data class Sniffed(
+    val smiles: String = "",
+    val cas: String = "",
+    val molUrl: String = "",
+    val propUrl: String = "",
+    val inchiKey: String = "",
+    val title: String = ""
+) {
+    val hasStructure: Boolean get() = molUrl.isNotEmpty() || smiles.isNotEmpty() || inchiKey.isNotEmpty() || cas.isNotEmpty()
+    /** 卡片上显示的来源说明 */
+    val source: String
+        get() = when {
+            molUrl.isNotEmpty() -> "MOL 文件"
+            smiles.isNotEmpty() -> "SMILES"
+            inchiKey.isNotEmpty() -> "InChIKey → PubChem"
+            cas.isNotEmpty() -> "CAS → PubChem"
+            else -> "无"
+        }
+}
+
+/**
+ * 页面嗅探脚本。ChemicalBook 的页面形态很多，这里按"能拿到就行"做宽匹配：
+ *  - MOL 链接：/CAS/mol/{CAS}.mol、/CAS/{yyyyMMdd}/mol/{CAS}.mol、任何 *.mol/*.sdf
+ *  - SMILES：桌面版 <th>SMILES</th><td>…</td>、移动版 <li><span>SMILES :</span>…</li>，
+ *    标签可能带全角冒号、空格，值也可能在兄弟节点里
+ *  - InChIKey：兜底，拿去 PubChem 换 SMILES
+ *  - CAS：从 mol 链接里解析，其次全文匹配 NNNN-NN-N
+ */
 private val SNIFF_JS = """
 (function () {
   function txt(e) { return ((e && e.textContent) || '').replace(/\s+/g, ' ').trim(); }
-  var out = { smiles: '', cas: '', mol: '', prop: '', title: document.title || '' };
-  // MOL 链接有两种形态：/CAS/mol/{CAS}.mol 和 /CAS/{yyyyMMdd}/mol/{CAS}.mol
-  var a = document.querySelector('a[href*="/CAS/mol/"]');
-  if (!a) {
-    var ls = document.querySelectorAll('a[href]');
-    for (var li = 0; li < ls.length; li++) {
-      var hv = ls[li].getAttribute('href') || '';
-      if (/\.mol(\?|$)/i.test(hv)) { a = ls[li]; break; }
+  var out = { smiles: '', cas: '', mol: '', prop: '', inchi: '', title: document.title || '' };
+
+  // ── MOL / SDF 链接：不做路径白名单，只认扩展名和 /mol/ 段 ──
+  var molRe = /\.(mol|sdf)(\?|#|$)/i;
+  var links = document.querySelectorAll('a[href]');
+  for (var i = 0; i < links.length; i++) {
+    var href = links[i].href || '';
+    if (!molRe.test(href) && href.indexOf('/mol/') < 0) continue;
+    // 优先选带 CAS 号的那个
+    if (!out.mol || /\d{2,7}-\d{2}-\d/.test(href)) {
+      out.mol = href;
+      var mm = href.match(/\/(\d{2,7}-\d{2}-\d)\.(?:mol|sdf)/i);
+      if (mm) { out.cas = mm[1]; break; }
     }
   }
-  if (a) {
-    out.mol = a.href;
-    var mm = a.href.match(/\/([0-9]{2,7}-[0-9]{2}-[0-9])\.mol/i);
-    if (mm) out.cas = mm[1];
+
+  // ── SMILES：标签节点（th/span/b/strong/td/li/p/div）后面跟值 ──
+  var okSmiles = /^[A-Za-z0-9@+\-\[\]()=#$:\/\\.%*]+$/;
+  var nodes = document.querySelectorAll('th,span,b,strong,td,li,p,div,font');
+  for (var n = 0; n < nodes.length; n++) {
+    var t = txt(nodes[n]);
+    if (t.length > 400) continue;
+    var m = t.match(/^SMILES\s*[:\uFF1A]?\s*(.*)$/i);
+    if (!m) continue;
+    var v = m[1];
+    if (!v) {
+      var sib = nodes[n].nextElementSibling;
+      if (sib) v = txt(sib).replace(/^[:\uFF1A]\s*/, '');
+    }
+    if (!v && nodes[n].parentElement) {
+      var pt = txt(nodes[n].parentElement);
+      var pm = pt.match(/SMILES\s*[:\uFF1A]\s*(.+)$/i);
+      if (pm) v = pm[1];
+    }
+    v = (v || '').split(' ')[0];
+    if (v.length >= 2 && okSmiles.test(v) && /[A-Za-z]/.test(v)) { out.smiles = v; break; }
   }
-  var ok = /^[A-Za-z0-9@+\-\[\]()=#$:\/\\\.%*]+$/;
-  var nodes = document.querySelectorAll('th,span,b,strong,td,li,p');
-  for (var i = 0; i < nodes.length; i++) {
-    var t = txt(nodes[i]);
-    if (!/^SMILES\b/i.test(t) || t.length > 400) continue;
-    var v = t.replace(/^SMILES\s*[:\uFF1A]?\s*/i, '');
-    if (!v && nodes[i].nextElementSibling) v = txt(nodes[i].nextElementSibling).replace(/^[:\uFF1A]\s*/, '');
-    if (v && v.length >= 2 && ok.test(v) && /[A-Za-z]/.test(v)) { out.smiles = v; break; }
-  }
+
+  // ── InChIKey（26 位，XXXX-XXXX-XXXX-XX 的两段式）──
+  var body = (document.body && document.body.innerText) || '';
+  var ik = body.match(/InChIKey\s*[:\uFF1A]?\s*([A-Z]{14}-[A-Z]{10}-[A-Z])/i);
+  if (ik) out.inchi = ik[1];
+
+  // ── 理化信息页链接 ──
   var p = document.querySelector('a[href*="ChemicalProductProperty"]') ||
-          document.querySelector('a[href*="ProductChemicalProperties"]');
+          document.querySelector('a[href*="ProductChemicalProperties"]') ||
+          document.querySelector('a[href*="productdetail"]');
   if (p) out.prop = p.href;
+
+  // ── CAS 兜底 ──
   if (!out.cas) {
-    var m2 = ((document.body && document.body.innerText) || '').match(/\b[0-9]{2,7}-[0-9]{2}-[0-9]\b/);
+    var m2 = body.match(/\b[0-9]{2,7}-[0-9]{2}-[0-9]\b/);
     if (m2) out.cas = m2[0];
   }
   return JSON.stringify(out);
 })()
 """
-
-/** 把 molfile 灌进化学结构式搜索页（Ketcher 编辑器 + 站点的隐藏 textarea） */
-private fun fillMolJs(mol: String): String {
-    val q = JSONObject.quote(mol)
-    return """
-    (function (mol) {
-      var ta = document.getElementById('mol');
-      if (ta) ta.value = mol;
-
-      function frame() { return document.getElementById('ketcherFrame'); }
-
-      // 移动版把 Ketcher 放在标签页容器里，容器/iframe 没布局时画布是空的：
-      // 先把它显出来、给足尺寸，再触发 resize，Ketcher 才会重绘 SVG。
-      function focusMode() {
-        // 折叠站点头部/面包屑/标题行，把竖向空间全留给编辑器
-        try {
-          if (!document.getElementById('cb-focus-style')) {
-            var st = document.createElement('style');
-            st.id = 'cb-focus-style';
-            st.textContent = '.Maps,.structure,#foot,header,.head,.nav,.header{display:none!important}';
-            (document.head || document.documentElement).appendChild(st);
-          }
-          // 站点把编辑器写死 700px 宽，屏窄时会横向溢出：用 CSS zoom 整体缩到刚好铺满，
-          // iframe 内部仍是 700x500（Ketcher 的坐标映射不受影响，缩放后仍能拖动）
-          try {
-            if (!document.body.dataset.cbZoom && window.innerWidth < 720) {
-              var z = Math.max(0.6, Math.min(1, window.innerWidth / 712));
-              document.body.style.zoom = z;
-              document.body.dataset.cbZoom = String(z);
-            }
-          } catch (e) {}
-        } catch (e) {}
-      }
-
-      function revealAndResize() {
-        var f = frame();
-        try {
-          focusMode();
-          var tab = document.getElementById('b_Ketcher');
-          if (tab) { tab.style.display = 'block'; }
-          var wrap = tab && tab.parentElement;
-          if (wrap) { wrap.style.display = 'block'; }
-          if (f) {
-            // 不要改 iframe 宽高：Ketcher 在加载时按 700x500 建画布，
-            // 事后改容器尺寸会让它重绘到错误视口（点一下就空白、拖动也不跟手）。
-            // 只保证它可见，尺寸交给站点自己。
-            f.style.visibility = 'visible';
-            f.style.display = 'block';
-          }
-        } catch (e) { console.log('[CB] reveal error ' + e); }
-      }
-
-      function countAtoms(m) {
-        try { var c = String(m).split('\n')[3].trim().split(/\s+/); return 'atoms=' + c[0] + ' bonds=' + c[1]; }
-        catch (e) { return 'unparsed'; }
-      }
-
-      // 画布内容是否真的落在可见区域：把每个 path 的屏幕坐标算出来，取并集和视口比较
-      function canvasInfo() {
-        try {
-          var inner = frame().contentWindow;
-          var svg = inner.document.querySelector('svg');
-          if (!svg) return 'no-svg';
-          var vr = svg.getBoundingClientRect();
-          var paths = svg.querySelectorAll('path,line,polyline,polygon');
-          var n = 0, minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9, sumSpan = 0, cnt = 0;
-          for (var i = 0; i < paths.length; i++) {
-            var el = paths[i], bb, m;
-            try { bb = el.getBBox(); m = el.getScreenCTM(); } catch (e) { continue; }
-            if (!m || (!(bb.width > 0.3) && !(bb.height > 0.3))) continue;
-            var xs = [], ys = [];
-            var pts = [[bb.x, bb.y], [bb.x + bb.width, bb.y], [bb.x, bb.y + bb.height], [bb.x + bb.width, bb.y + bb.height]];
-            for (var j = 0; j < 4; j++) {
-              xs.push(m.a * pts[j][0] + m.c * pts[j][1] + m.e);
-              ys.push(m.b * pts[j][0] + m.d * pts[j][1] + m.f);
-            }
-            var x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
-            var x1 = Math.max.apply(null, xs), y1 = Math.max.apply(null, ys);
-            n++;
-            minx = Math.min(minx, x0); miny = Math.min(miny, y0);
-            maxx = Math.max(maxx, x1); maxy = Math.max(maxy, y1);
-            var span = Math.max(x1 - x0, y1 - y0);
-            if (span > 3) { sumSpan += span; cnt++; }
-          }
-          var overlapW = Math.max(0, Math.min(maxx, vr.right) - Math.max(minx, vr.left));
-          var overlapH = Math.max(0, Math.min(maxy, vr.bottom) - Math.max(miny, vr.top));
-          return 'view=' + Math.round(vr.width) + 'x' + Math.round(vr.height) + ' paths=' + n +
-                 ' bondPx=' + (cnt ? Math.round(sumSpan / cnt) : 0) +
-                 ' screenBox=' + [minx, miny, maxx, maxy].map(Math.round).join(',') +
-                 ' overlap=' + Math.round(overlapW) + 'x' + Math.round(overlapH);
-        } catch (e) { return 'canvasInfo error ' + e; }
-      }
-
-      function readback(k) {
-        try {
-          var out = k.getMolfile();
-          var inner = frame() && frame().contentWindow;
-          var svgNodes = 0;
-          try { svgNodes = inner.document.querySelectorAll('svg *').length; } catch (e) {}
-          if (out && out.then) out.then(function (m) { console.log('[CB] readback ' + countAtoms(m) + ' svg=' + svgNodes + ' ' + canvasInfo()); });
-          else console.log('[CB] readback ' + countAtoms(out) + ' svg=' + svgNodes + ' ' + canvasInfo());
-        } catch (e) { console.log('[CB] readback error ' + e); }
-      }
-
-      var tries = 0;
-      var timer = setInterval(function () {
-        tries++;
-        revealAndResize();
-        var k = null;
-        try { var f = frame(); k = f && f.contentWindow && f.contentWindow.ketcher; } catch (e) {}
-        if (!k) {
-          if (tries > 50) { clearInterval(timer); window.__cbFill = 'noframe'; console.log('[CB] ketcher not found'); }
-          return;
-        }
-        clearInterval(timer);
-        console.log('[CB] ketcher api set=' + (typeof k.setMolecule) + ' get=' + (typeof k.getMolfile) +
-                    ' layout=' + (typeof k.layout) + ' zoomFit=' + (typeof k.zoomToFit));
-        try {
-          window.__cbFill = 'pending';
-          var r = k.setMolecule(mol);
-          var after = function () {
-            setTimeout(function () {
-              try { if (k.layout) k.layout(); } catch (e) {}
-              try { if (k.zoomToFit) k.zoomToFit(); } catch (e) {}
-              try { if (k.editor && k.editor.zoomToFit) k.editor.zoomToFit(); } catch (e) {}
-              revealAndResize();
-              readback(k);
-            }, 700);
-          };
-          if (r && r.then) r.then(function () { window.__cbFill = 'ok'; console.log('[CB] setMolecule ok'); after(); })
-                             .catch(function (e) { window.__cbFill = 'reject'; console.log('[CB] setMolecule rejected: ' + e); });
-          else { after(); }
-        } catch (e) { console.log('[CB] setMolecule threw: ' + e); }
-      }, 400);
-      return 'queued';
-    })($q)
-    """.trimIndent()
-}
-
-/** 把关键词填进站点自己的搜索框再提交（站点搜索只接受表单提交） */
-private fun submitSearchJs(query: String): String {
-    val q = JSONObject.quote(query)
-    return """
-    (function (q) {
-      var i = document.querySelector('input[name=keyword]') ||
-              document.querySelector('input[name=Keywords]') ||
-              document.querySelector('input[type=search]');
-      if (!i) return 'no-field';
-      i.value = q;
-      if (i.form) { i.form.submit(); return 'ok'; }
-      i.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-      return 'enter';
-    })($q)
-    """.trimIndent()
-}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -373,6 +270,7 @@ fun ChemicalBookSheet(
                     cas = o.optString("cas"),
                     molUrl = o.optString("mol"),
                     propUrl = o.optString("prop"),
+                    inchiKey = o.optString("inchi"),
                     title = o.optString("title")
                 )
             }.getOrNull()
@@ -411,25 +309,52 @@ fun ChemicalBookSheet(
 
     fun importStructure(s: Sniffed) {
         if (!s.hasStructure) { status = "这一页没有结构信息，先打开「理化信息」页"; return }
+
+        fun fallbackSmiles(reason: String) {
+            if (s.smiles.isNotEmpty()) {
+                processSmilesImport(s.smiles, layoutEngine, atoms, bonds, annotations, selectedIds, gNextId, canvasSizePx)
+                status = "$reason，已按页面 SMILES 导入（${atoms.size} 原子）"
+                sniffed = null
+                return
+            }
+            val key = when {
+                s.inchiKey.isNotEmpty() -> "InChIKey"
+                s.cas.isNotEmpty() -> "CAS"
+                else -> ""
+            }
+            if (key.isEmpty()) { status = "$reason，页面上也没有 SMILES / InChIKey / CAS"; return }
+            status = "$reason，正在用 $key 去 PubChem 换结构…"
+            scope.launch {
+                val smi = withContext(Dispatchers.IO) {
+                    when {
+                        s.inchiKey.isNotEmpty() -> pubchemSmilesOf(s.inchiKey, byInchiKey = true)
+                        else -> pubchemSmilesOf(s.cas, byInchiKey = false)
+                    }
+                }
+                android.util.Log.d("MOLDRAW_DEBUG", "[CB] $key→PubChem smiles=$smi")
+                if (smi.isNullOrBlank()) {
+                    status = "$reason，PubChem 也没查到"
+                } else {
+                    processSmilesImport(smi, layoutEngine, atoms, bonds, annotations, selectedIds, gNextId, canvasSizePx)
+                    status = "$reason，已用 PubChem 结构导入（${atoms.size} 原子）"
+                    sniffed = null
+                }
+            }
+        }
+
         if (s.molUrl.isNotEmpty()) {
             status = "正在下载 mol 文件…"
             downloadMol(s.molUrl) { mol ->
                 if (!mol.isNullOrBlank() && (mol.contains("V2000") || mol.contains("V3000"))) {
                     processMolImport(mol, layoutEngine, atoms, bonds, annotations, selectedIds, gNextId, canvasSizePx)
-                    status = "已导入 ${atoms.size} 个原子（mol 文件）"
-                    sniffed = null
-                } else if (s.smiles.isNotEmpty()) {
-                    processSmilesImport(s.smiles, layoutEngine, atoms, bonds, annotations, selectedIds, gNextId, canvasSizePx)
-                    status = "mol 下载失败，已按 SMILES 导入"
+                    status = "已导入 ${atoms.size} 个原子（MOL 文件）"
                     sniffed = null
                 } else {
-                    status = "mol 下载失败，且没有 SMILES 可用"
+                    fallbackSmiles("mol 下载失败")
                 }
             }
-        } else if (s.smiles.isNotEmpty()) {
-            processSmilesImport(s.smiles, layoutEngine, atoms, bonds, annotations, selectedIds, gNextId, canvasSizePx)
-            status = "已导入 ${atoms.size} 个原子（SMILES）"
-            sniffed = null
+        } else {
+            fallbackSmiles("页面没有 MOL 文件")
         }
     }
 

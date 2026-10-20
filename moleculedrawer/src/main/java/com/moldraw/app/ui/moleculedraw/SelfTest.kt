@@ -156,6 +156,79 @@ fun runSelfTest(context: Context) {
             log("SELFTEST PUBCHEM ${if (ok) "PASS" else "FAIL"} $smi cid=${h?.cid} name=${h?.name} formula=${h?.formula} cas=${h?.cas}")
         }
 
+        // ── 双键几何：环内双键的短线必须落在环内；末端双键(C=O)两根等长 ──
+        fun ring(n: Int, cx: Float, cy: Float, r: Float, doubleIdx: Set<Int>): Pair<MutableList<MoleculeAtom>, MutableList<MoleculeBond>> {
+            val as_ = mutableListOf<MoleculeAtom>()
+            val bs = mutableListOf<MoleculeBond>()
+            for (i in 0 until n) {
+                val ang = 2 * Math.PI * i / n
+                as_.add(MoleculeAtom(i + 1, cx + r * kotlin.math.cos(ang).toFloat(), cy + r * kotlin.math.sin(ang).toFloat(), Element.C))
+            }
+            for (i in 0 until n) {
+                bs.add(MoleculeBond(100 + i, i + 1, (i + 1) % n + 1, if (i in doubleIdx) BondType.DOUBLE else BondType.SINGLE))
+            }
+            return Pair(as_, bs)
+        }
+        for ((n, dbl) in listOf(6 to setOf(0, 2, 4), 5 to setOf(1, 3), 7 to setOf(1, 4))) {
+            val (aa, bb) = ring(n, 300f, 300f, BOND_LENGTH, dbl)
+            var allIn = true
+            val detail = StringBuilder()
+            for (b in bb.filter { it.type == BondType.DOUBLE }) {
+                val a1 = aa.first { it.id == b.atom1 }; val a2 = aa.first { it.id == b.atom2 }
+                val poly = ringPathForBond(aa, bb, a1.id, a2.id)
+                val dx = a2.x - a1.x; val dy = a2.y - a1.y
+                val len = kotlin.math.hypot(dx, dy); val ux = dx / len; val uy = dy / len
+                val (_, l2) = doubleBondSegments(a1.x, a1.y, a2.x, a2.y, ux, uy, len, poly, false)
+                val mx = (l2[0] + l2[2]) / 2f; val my = (l2[1] + l2[3]) / 2f
+                val inside = poly != null && pointInPolygon(mx, my, poly)
+                if (!inside) allIn = false
+                detail.append(" ${b.atom1}-${b.atom2}:${if (inside) "in" else "OUT"}")
+            }
+            if (allIn) pass++ else fail++
+            log("SELFTEST DBOND_RING ${if (allIn) "PASS" else "FAIL"} n=$n$detail")
+        }
+        // 稠环（两个四元环共用一条边 2-3）：共用键两侧都是环，短线也必须落在环内
+        run {
+            val as_ = mutableListOf(
+                MoleculeAtom(1, 300f, 300f, Element.C), MoleculeAtom(2, 400f, 300f, Element.C),
+                MoleculeAtom(3, 400f, 400f, Element.C), MoleculeAtom(4, 300f, 400f, Element.C),
+                MoleculeAtom(5, 500f, 300f, Element.C), MoleculeAtom(6, 500f, 400f, Element.C)
+            )
+            val bs = mutableListOf(
+                MoleculeBond(1, 1, 2, BondType.DOUBLE), MoleculeBond(2, 2, 3, BondType.SINGLE),
+                MoleculeBond(3, 3, 4, BondType.DOUBLE), MoleculeBond(4, 4, 1, BondType.SINGLE),
+                MoleculeBond(5, 2, 5, BondType.SINGLE), MoleculeBond(6, 5, 6, BondType.DOUBLE),
+                MoleculeBond(7, 6, 3, BondType.SINGLE)
+            )
+            var ok = true
+            val detail = StringBuilder()
+            for (b in bs.filter { it.type == BondType.DOUBLE }) {
+                val a1 = as_.first { it.id == b.atom1 }; val a2 = as_.first { it.id == b.atom2 }
+                val poly = ringPathForBond(as_, bs, a1.id, a2.id)
+                val dx = a2.x - a1.x; val dy = a2.y - a1.y
+                val len = kotlin.math.hypot(dx, dy); val ux = dx / len; val uy = dy / len
+                val (_, l2) = doubleBondSegments(a1.x, a1.y, a2.x, a2.y, ux, uy, len, poly, false)
+                val px = (l2[0] + l2[2]) / 2f; val py = (l2[1] + l2[3]) / 2f
+                val inside = poly != null && pointInPolygon(px, py, poly)
+                if (!inside) ok = false
+                detail.append(" ${b.atom1}-${b.atom2}:${if (inside) "in" else "OUT"}")
+            }
+            if (ok) pass++ else fail++
+            log("SELFTEST DBOND_FUSED ${if (ok) "PASS" else "FAIL"}$detail")
+        }
+        // 末端双键 C=O：两根线等长
+        run {
+            val as_ = listOf(MoleculeAtom(1, 300f, 300f, Element.C), MoleculeAtom(2, 350f, 300f, Element.O))
+            val bs = listOf(MoleculeBond(1, 1, 2, BondType.DOUBLE))
+            val len = 50f
+            val (l1, l2) = doubleBondSegments(300f, 300f, 350f, 300f, 1f, 0f, len, null, isTerminalDouble(bs, 1, 2))
+            val len1 = kotlin.math.hypot(l1[2] - l1[0], l1[3] - l1[1])
+            val len2 = kotlin.math.hypot(l2[2] - l2[0], l2[3] - l2[1])
+            val ok = kotlin.math.abs(len1 - len2) < 0.01f && len1 > len * 0.99f
+            if (ok) pass++ else fail++
+            log("SELFTEST DBOND_TERMINAL ${if (ok) "PASS" else "FAIL"} len1=$len1 len2=$len2")
+        }
+
         log("SELFTEST SUMMARY pass=$pass fail=$fail")
     } catch (e: Exception) {
         log("SELFTEST EXCEPTION ${e::class.simpleName}: ${e.message}")

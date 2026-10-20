@@ -143,7 +143,8 @@ fun DrawScope.drawCanvasContent(
             b.type,
             box1 = labelBoxes[a1.id],
             box2 = labelBoxes[a2.id],
-            ringCenter = ringCentroidForBond(atoms, bonds, a1.id, a2.id)
+            ringPoly = ringPathForBond(atoms, bonds, a1.id, a2.id),
+            terminal = isTerminalDouble(bonds, a1.id, a2.id)
         )
     }
     // 跳过被 FUNC_GROUP 标注覆盖的原子（有 funGroupLabel 的都跳过，标注文字替代渲染）
@@ -497,7 +498,7 @@ fun DrawScope.drawCanvasContent(
                     if (i % 2 == 0) {
                         drawBond(a1, a2, BondType.SINGLE, box1 = bx1, box2 = bx2)
                     } else {
-                        drawBond(a1, a2, BondType.DOUBLE, box1 = bx1, box2 = bx2, ringCenter = rc)
+                        drawBond(a1, a2, BondType.DOUBLE, box1 = bx1, box2 = bx2, ringPoly = ring.map { xf(it.first) to yf(it.second) })
                     }
                 }
             }

@@ -447,20 +447,13 @@ fun sharePdf(
         when (b.type) {
             BondType.SINGLE -> canvas.drawLine(sx, sy, ex, ey, strokePaint)
             BondType.DOUBLE -> {
-                if (bTrim > 0f) {
-                    // 长线压在键轴上（单键才能接住），短线偏移一侧并两端缩进
-                    canvas.drawLine(sx, sy, ex, ey, strokePaint)
-                    val side = offsetSide(sx, sy, ex, ey, ux, uy, ringCentroidForBond(atoms, bonds, a1.id, a2.id))
-                    val px = -uy * bOff * side; val py = ux * bOff * side
-                    canvas.drawLine(
-                        sx + (ex-sx)*bTrim + px, sy + (ey-sy)*bTrim + py,
-                        ex - (ex-sx)*bTrim + px, ey - (ey-sy)*bTrim + py, strokePaint
-                    )
-                } else {
-                    val px = -uy * bOff; val py = ux * bOff
-                    canvas.drawLine(sx+px, sy+py, ex+px, ey+py, strokePaint)
-                    canvas.drawLine(sx-px, sy-py, ex-px, ey-py, strokePaint)
-                }
+                val (l1, l2) = doubleBondSegments(
+                    sx, sy, ex, ey, ux, uy, len,
+                    ringPathForBond(atoms, bonds, a1.id, a2.id),
+                    isTerminalDouble(bonds, a1.id, a2.id)
+                )
+                canvas.drawLine(l1[0], l1[1], l1[2], l1[3], strokePaint)
+                canvas.drawLine(l2[0], l2[1], l2[2], l2[3], strokePaint)
             }
             BondType.TRIPLE -> {
                 val px = -uy * max(bOff, 4f); val py = ux * max(bOff, 4f)
@@ -534,7 +527,7 @@ fun sharePdf(
                     canvas.drawLine(sx, sy, ex, ey, strokePaint)
                 } else {
                     drawRingDoubleBond(canvas, sx, sy, ex, ey, ux, uy, doublePaint,
-                        ringCenter = rc)
+                        ringPoly = ring.map { (it.first + offsetX) to (it.second + offsetY) })
                 }
             }
         }

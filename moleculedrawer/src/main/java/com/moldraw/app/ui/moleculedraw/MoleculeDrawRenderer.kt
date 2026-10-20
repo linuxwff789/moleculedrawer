@@ -121,25 +121,12 @@ fun drawRingDoubleBond(
     canvas: android.graphics.Canvas,
     sx: Float, sy: Float, ex: Float, ey: Float,
     ux: Float, uy: Float, paint: Paint,
-    ringCenter: Pair<Float, Float>? = null
+    ringPoly: List<Pair<Float, Float>>? = null
 ) {
     val len = hypot(ex - sx, ey - sy)
-    val (off, trim) = doubleBondParams(len)
-    if (trim <= 0f) {
-        // 经典样式：两根等长平行线，对称偏在键轴两侧
-        val px = -uy * off; val py = ux * off
-        canvas.drawLine(sx + px, sy + py, ex + px, ey + py, paint)
-        canvas.drawLine(sx - px, sy - py, ex - px, ey - py, paint)
-        return
-    }
-    // 专业样式：长线沿键轴（单键接到它上面，不留空隙），短线偏一侧并两端缩进
-    canvas.drawLine(sx, sy, ex, ey, paint)
-    val side = offsetSide(sx, sy, ex, ey, ux, uy, ringCenter)
-    val px = -uy * off * side; val py = ux * off * side
-    canvas.drawLine(
-        sx + (ex - sx) * trim + px, sy + (ey - sy) * trim + py,
-        ex - (ex - sx) * trim + px, ey - (ey - sy) * trim + py, paint
-    )
+    val (a, b) = doubleBondSegments(sx, sy, ex, ey, ux, uy, len, ringPoly, terminal = false)
+    canvas.drawLine(a[0], a[1], a[2], a[3], paint)
+    canvas.drawLine(b[0], b[1], b[2], b[3], paint)
 }
 
 /** 偏移方向：有环心时朝环内，否则固定朝键的右手侧（同一条键总是同一侧） */
@@ -155,16 +142,15 @@ fun offsetSide(
 }
 
 /**
- * 该键是否成环；成环则返回环上其余原子的质心（用作双键短线偏移方向）。
- * 用 BFS 找 a1→a2 的最短替代路径，3~8 个原子视为环。
+ * 该键所在的最短环（BFS 找 a1→a2 的替代路径），返回环上原子的坐标序列（按环序）。
+ * 3~8 个原子视为环；不成环返回 null。
  */
-fun ringCentroidForBond(
+fun ringPathForBond(
     atoms: List<MoleculeAtom>,
     bonds: List<MoleculeBond>,
     id1: Int, id2: Int,
     maxPath: Int = 8
-): Pair<Float, Float>? {
-    if (!isProStyle()) return null
+): List<Pair<Float, Float>>? {
     val adj = HashMap<Int, MutableList<Int>>()
     for (b in bonds) {
         if ((b.atom1 == id1 && b.atom2 == id2) || (b.atom1 == id2 && b.atom2 == id1)) continue
@@ -191,7 +177,107 @@ fun ringCentroidForBond(
     if (path.size < 3 || path.size > maxPath) return null
     val pts = path.mapNotNull { id -> atoms.find { it.id == id } }
     if (pts.size != path.size) return null
-    return Pair(pts.map { it.x }.average().toFloat(), pts.map { it.y }.average().toFloat())
+    return pts.map { it.x to it.y }
+}
+
+/** 环质心（旧接口，保留给需要方向的场景） */
+fun ringCentroidForBond(
+    atoms: List<MoleculeAtom>,
+    bonds: List<MoleculeBond>,
+    id1: Int, id2: Int,
+    maxPath: Int = 8
+): Pair<Float, Float>? {
+    if (!isProStyle()) return null
+    val poly = ringPathForBond(atoms, bonds, id1, id2, maxPath) ?: return null
+    return Pair(poly.map { it.first }.average().toFloat(), poly.map { it.second }.average().toFloat())
+}
+
+/** 射线法判断点是否在多边形内（多边形按环序给出） */
+fun pointInPolygon(px: Float, py: Float, poly: List<Pair<Float, Float>>): Boolean {
+    if (poly.size < 3) return false
+    var inside = false
+    var j = poly.size - 1
+    for (i in poly.indices) {
+        val xi = poly[i].first; val yi = poly[i].second
+        val xj = poly[j].first; val yj = poly[j].second
+        if ((yi > py) != (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi + 1e-6f) + xi) inside = !inside
+        j = i
+    }
+    return inside
+}
+
+/**
+ * 环内双键的第二根线该往哪边偏：直接把两个候选偏移点各试一次，
+ * 取落在环多边形内部的那个。比"朝质心"稳——非凸环、稠环（共用键两侧
+ * 都是环）、杂环顶点被拖歪时都不会跑到环外。
+ */
+fun insideSide(
+    sx: Float, sy: Float, ex: Float, ey: Float,
+    ux: Float, uy: Float, off: Float,
+    poly: List<Pair<Float, Float>>?
+): Float {
+    if (poly == null || poly.size < 3) return 1f
+    val mx = (sx + ex) / 2f; val my = (sy + ey) / 2f
+    val px = -uy * off; val py = ux * off
+    val inPlus = pointInPolygon(mx + px, my + py, poly)
+    val inMinus = pointInPolygon(mx - px, my - py, poly)
+    return when {
+        inPlus && !inMinus -> 1f
+        inMinus && !inPlus -> -1f
+        inPlus && inMinus -> {
+            // 稠环共用键：两侧都在环里，退回朝本环质心的方向
+            val cx = poly.map { it.first }.average().toFloat()
+            val cy = poly.map { it.second }.average().toFloat()
+            if ((cx - mx) * px + (cy - my) * py >= 0f) 1f else -1f
+        }
+        else -> 1f
+    }
+}
+
+/** 末端双键（某一端只有这一根键，比如 C=O、C=CH₂）：两根线等长对称 */
+fun isTerminalDouble(bonds: List<MoleculeBond>, id1: Int, id2: Int): Boolean {
+    val d1 = bonds.count { it.atom1 == id1 || it.atom2 == id1 }
+    val d2 = bonds.count { it.atom1 == id2 || it.atom2 == id2 }
+    return d1 <= 1 || d2 <= 1
+}
+
+/**
+ * 双键的两根线（全部渲染路径共用，屏幕/位图/PDF/矢量导出必须一致）。
+ * 返回 [[x1,y1,x2,y2], [x1,y1,x2,y2]]。
+ *
+ * 专业样式：长线压键轴（单键才接得上），第二根偏一侧并两端缩进；
+ * 末端双键（C=O）两根等长、对称分布在键轴两侧——这是 ChemDraw 的画法。
+ */
+fun doubleBondSegments(
+    sx: Float, sy: Float, ex: Float, ey: Float,
+    ux: Float, uy: Float, len: Float,
+    poly: List<Pair<Float, Float>>?, terminal: Boolean
+): Pair<FloatArray, FloatArray> {
+    val (off, trim) = doubleBondParams(len)
+    val px = -uy * off; val py = ux * off
+    if (trim <= 0f) {
+        return Pair(
+            floatArrayOf(sx + px, sy + py, ex + px, ey + py),
+            floatArrayOf(sx - px, sy - py, ex - px, ey - py)
+        )
+    }
+    if (terminal) {
+        val h = off * 0.55f
+        val hx = -uy * h; val hy = ux * h
+        return Pair(
+            floatArrayOf(sx + hx, sy + hy, ex + hx, ey + hy),
+            floatArrayOf(sx - hx, sy - hy, ex - hx, ey - hy)
+        )
+    }
+    val side = insideSide(sx, sy, ex, ey, ux, uy, off, poly)
+    val ox = px * side; val oy = py * side
+    return Pair(
+        floatArrayOf(sx, sy, ex, ey),
+        floatArrayOf(
+            sx + (ex - sx) * trim + ox, sy + (ey - sy) * trim + oy,
+            ex - (ex - sx) * trim + ox, ey - (ey - sy) * trim + oy
+        )
+    )
 }
 
 /** 把缩写拆成"元素+紧跟的下标"词元，例如 NO₂ → [N, O₂] */
@@ -231,7 +317,8 @@ fun ellipseTrim(halfW: Float, halfH: Float, ux: Float, uy: Float): Float {
 fun DrawScope.drawBond(
     a1: MoleculeAtom, a2: MoleculeAtom, type: BondType, kekuleIndex: Int = -1,
     box1: Pair<Float, Float>? = null, box2: Pair<Float, Float>? = null,
-    ringCenter: Pair<Float, Float>? = null
+    ringPoly: List<Pair<Float, Float>>? = null,
+    terminal: Boolean = false
 ) {
     val p1 = Offset(a1.x, a1.y); val p2 = Offset(a2.x, a2.y)
     val dx = p2.x - p1.x; val dy = p2.y - p1.y
@@ -283,19 +370,9 @@ fun DrawScope.drawBond(
             }
         }
         BondType.DOUBLE -> {
-            if (trim > 0f) {
-                // 专业样式：长线压在键轴上（单键才能接住），短线偏移到一侧并两端缩进
-                drawLine(bondColor, s1, s2, strokeWidth = sw - 0.3f)
-                val side = offsetSide(s1.x, s1.y, s2.x, s2.y, ux, uy, ringCenter)
-                val px = -uy * off * side; val py = ux * off * side
-                val ax = s1.x + (s2.x - s1.x) * trim + px; val ay = s1.y + (s2.y - s1.y) * trim + py
-                val bx = s2.x - (s2.x - s1.x) * trim + px; val by = s2.y - (s2.y - s1.y) * trim + py
-                drawLine(bondColor, Offset(ax, ay), Offset(bx, by), strokeWidth = sw - 0.3f)
-            } else {
-                val px = -uy * off; val py = ux * off
-                drawLine(bondColor, Offset(s1.x + px, s1.y + py), Offset(s2.x + px, s2.y + py), strokeWidth = sw - 0.3f)
-                drawLine(bondColor, Offset(s1.x - px, s1.y - py), Offset(s2.x - px, s2.y - py), strokeWidth = sw - 0.5f)
-            }
+            val (l1, l2) = doubleBondSegments(s1.x, s1.y, s2.x, s2.y, ux, uy, len, ringPoly, terminal)
+            drawLine(bondColor, Offset(l1[0], l1[1]), Offset(l1[2], l1[3]), strokeWidth = sw - 0.3f)
+            drawLine(bondColor, Offset(l2[0], l2[1]), Offset(l2[2], l2[3]), strokeWidth = sw - 0.4f)
         }
         BondType.TRIPLE -> {
             drawLine(bondColor, s1, s2, strokeWidth = sw - 0.8f)

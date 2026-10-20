@@ -157,7 +157,8 @@ private val SNIFF_JS = """
     if (!v && nodes[i].nextElementSibling) v = txt(nodes[i].nextElementSibling).replace(/^[:\uFF1A]\s*/, '');
     if (v && v.length >= 2 && ok.test(v) && /[A-Za-z]/.test(v)) { out.smiles = v; break; }
   }
-  var p = document.querySelector('a[href*="ChemicalProductProperty"]');
+  var p = document.querySelector('a[href*="ChemicalProductProperty"]') ||
+          document.querySelector('a[href*="ProductChemicalProperties"]');
   if (p) out.prop = p.href;
   if (!out.cas) {
     var m2 = ((document.body && document.body.innerText) || '').match(/\b[0-9]{2,7}-[0-9]{2}-[0-9]\b/);
@@ -202,6 +203,7 @@ fun ChemicalBookSheet(
     var sniffed by remember { mutableStateOf<Sniffed?>(null) }
     var hit by remember { mutableStateOf<PcHit?>(null) }
     var reverseBusy by remember { mutableStateOf(false) }
+    var autoFollow by remember { mutableStateOf(false) }
     var web by remember { mutableStateOf<WebView?>(null) }
 
     fun doSniff(w: WebView) {
@@ -223,6 +225,14 @@ fun ChemicalBookSheet(
             }.getOrNull()
             // 商品页没有结构但有「理化信息」链接时也要显示，好让用户跳过去
             if (s != null && (s.hasStructure || s.propUrl.isNotEmpty() || s.cas.isNotEmpty())) sniffed = s
+            // 从 CAS 页进来时，自动再跳一步到理化详情页
+            if (s != null && autoFollow && !s.hasStructure && s.propUrl.isNotEmpty()) {
+                autoFollow = false
+                status = "正在打开理化详情页…"
+                w.loadUrl(s.propUrl)
+            } else if (s != null && s.hasStructure) {
+                autoFollow = false
+            }
         }
     }
 
@@ -268,25 +278,14 @@ fun ChemicalBookSheet(
         }
     }
 
-    fun doReverseLookup() {
-        if (atoms.isEmpty()) { status = "画布是空的，先画个结构"; return }
+    fun lookupSmilesText(smilesIn: String) {
         reverseBusy = true
-        status = "正在用当前结构的 SMILES 反查…"
+        status = "正在用 SMILES 反查…"
         hit = null
         scope.launch {
-            val smiles = withContext(Dispatchers.Default) {
-                runCatching {
-                    IndigoNativeLayoutEngineAdapter().generateSmiles(atoms.toList(), bonds.toList(), annotations.toList())
-                }.getOrNull().orEmpty()
-            }
-            android.util.Log.d("MOLDRAW_DEBUG", "[CB] reverse smiles='$smiles'")
-            if (smiles.isBlank()) {
-                reverseBusy = false
-                status = "生成 SMILES 失败，检查结构有没有异常价态"
-                return@launch
-            }
+            val smiles = smilesIn.trim()
             val r = withContext(Dispatchers.IO) { pubchemLookup(smiles) }
-            android.util.Log.d("MOLDRAW_DEBUG", "[CB] reverse hit=$r")
+            android.util.Log.d("MOLDRAW_DEBUG", "[CB] reverse smiles='$smiles' hit=$r")
             reverseBusy = false
             if (r == null) {
                 status = "PubChem 里没有匹配的结构（SMILES: $smiles）"
@@ -294,6 +293,52 @@ fun ChemicalBookSheet(
                 hit = r
                 status = ""
             }
+        }
+    }
+
+    fun doReverseLookup() {
+        if (atoms.isEmpty()) { status = "画布是空的，先画个结构"; return }
+        reverseBusy = true
+        status = "正在生成当前结构的 SMILES…"
+        hit = null
+        scope.launch {
+            val smiles = withContext(Dispatchers.Default) {
+                runCatching {
+                    IndigoNativeLayoutEngineAdapter().generateSmiles(atoms.toList(), bonds.toList(), annotations.toList())
+                }.getOrNull().orEmpty()
+            }
+            if (smiles.isBlank()) {
+                reverseBusy = false
+                status = "生成 SMILES 失败，检查结构有没有异常价态"
+            } else {
+                lookupSmilesText(smiles)
+            }
+        }
+    }
+
+    /** 输入框里像 SMILES（含 = # [ ] ( ) @ + 或 元素+数字）就直接反查，不当关键词搜 */
+    fun looksLikeSmiles(q: String): Boolean {
+        val t = q.trim()
+        if (t.length < 2 || t.any { it.code > 0x2E80 }) return false
+        if (t.contains(' ')) return false
+        if (Regex("^\\d{2,7}-\\d{2}-\\d$").matches(t)) return false
+        val structural = t.any { it in "=#[]()@+\\/" }
+        val elemNum = Regex("[A-Za-z][0-9]").containsMatchIn(t)
+        return structural || elemNum
+    }
+
+    fun runSearch() {
+        val q = query.trim()
+        if (q.isEmpty()) return
+        sniffed = null
+        hit = null
+        if (looksLikeSmiles(q)) {
+            lookupSmilesText(q)
+            return
+        }
+        status = "搜索中…"
+        web?.evaluateJavascript(submitSearchJs(q)) { r ->
+            if (r != null && r.contains("no-field")) status = "页面上没找到搜索框，请手动输入"
         }
     }
 
@@ -316,27 +361,9 @@ fun ChemicalBookSheet(
                         placeholder = { Text("中文名 / 英文名 / CAS，如 苯甲酸", fontSize = 13.sp) },
                         textStyle = MaterialTheme.typography.bodyMedium,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = {
-                            if (query.isNotBlank()) {
-                                status = "搜索中…"
-                                sniffed = null
-                                web?.evaluateJavascript(submitSearchJs(query.trim())) { r ->
-                                    if (r != null && r.contains("no-field")) {
-                                        status = "页面上没找到搜索框，请手动输入"
-                                    }
-                                }
-                            }
-                        })
+                        keyboardActions = KeyboardActions(onSearch = { runSearch() })
                     )
-                    IconButton(onClick = {
-                        if (query.isNotBlank()) {
-                            status = "搜索中…"
-                            sniffed = null
-                            web?.evaluateJavascript(submitSearchJs(query.trim())) { r ->
-                                if (r != null && r.contains("no-field")) status = "页面上没找到搜索框，请手动输入"
-                            }
-                        }
-                    }) { Icon(Icons.Default.Search, contentDescription = "搜索") }
+                    IconButton(onClick = { runSearch() }) { Icon(Icons.Default.Search, contentDescription = "搜索") }
                     IconButton(onClick = { web?.let { if (it.canGoBack()) it.goBack() } }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "后退")
                     }
@@ -439,6 +466,11 @@ fun ChemicalBookSheet(
                                 )
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                     if (h.cas.isNotEmpty()) {
+                                        TextButton(onClick = {
+                                            autoFollow = true
+                                            status = "正在打开理化详情页…"
+                                            web?.loadUrl("https://m.chemicalbook.com/CAS_" + h.cas + ".htm")
+                                        }) { Text("打开理化详情页") }
                                         TextButton(onClick = {
                                             query = h.cas
                                             status = "正在站内搜 CAS ${h.cas}…"

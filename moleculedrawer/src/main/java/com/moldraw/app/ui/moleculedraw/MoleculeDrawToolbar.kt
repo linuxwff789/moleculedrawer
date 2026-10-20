@@ -203,6 +203,50 @@ fun MoleculeContextBar(
     var showElemSheet by remember { mutableStateOf(false) }
     HorizontalDivider(color = DividerColor, thickness = 1.dp)
 
+    // 缩放：有选区只缩放选区，没选区缩放整张图；撤销点只压一次
+    fun applyScale(f: Float) {
+        if (s.atoms.isEmpty() || f <= 0f || abs(f - 1f) < 0.001f) return
+        s.pushUndo()
+        val hasSel = s.selectedIds.isNotEmpty()
+        val targets = if (hasSel) s.atoms.filter { it.id in s.selectedIds } else s.atoms.toList()
+        if (targets.isEmpty()) return
+        val cx = targets.map { it.x }.average().toFloat()
+        val cy = targets.map { it.y }.average().toFloat()
+        if (hasSel) {
+            for (a in s.atoms) {
+                if (a.id !in s.selectedIds) continue
+                a.x = cx + (a.x - cx) * f
+                a.y = cy + (a.y - cy) * f
+            }
+            for (ann in s.annotations) {
+                if (-ann.id !in s.selectedIds) continue
+                ann.scale *= f
+                ann.x = cx + (ann.x - cx) * f
+                ann.y = cy + (ann.y - cy) * f
+                if (ann.type == AnnotationType.ARROW) {
+                    ann.endX = cx + (ann.endX - cx) * f
+                    ann.endY = cy + (ann.endY - cy) * f
+                }
+            }
+        } else {
+            for (a in s.atoms) {
+                a.x = cx + (a.x - cx) * f
+                a.y = cy + (a.y - cy) * f
+            }
+            for (ann in s.annotations) {
+                ann.scale *= f
+                ann.x = cx + (ann.x - cx) * f
+                ann.y = cy + (ann.y - cy) * f
+                if (ann.type == AnnotationType.ARROW) {
+                    ann.endX = cx + (ann.endX - cx) * f
+                    ann.endY = cy + (ann.endY - cy) * f
+                }
+            }
+        }
+        s.scaleFactor = 1f
+        s.scaleValue = "1.0"
+    }
+
     // ═══ 子工具栏（随当前工具变化，单行高 40dp）═══
     when (s.tool) {
         DrawTool.ATOM -> {
@@ -329,29 +373,20 @@ fun MoleculeContextBar(
                     suffix = { Text("×", fontSize = 12.sp, color = SubTextColor) },
                     modifier = Modifier.width(104.dp)
                 )
-                listOf(0.5f, 0.8f, 1.0f, 1.2f, 1.5f, 2.0f).forEach { f ->
+                // 自定义倍数：输入后点「应用」（放在预设前面，窄屏也看得到）
+                Button(
+                    onClick = { applyScale(s.scaleValue.toFloatOrNull() ?: s.scaleFactor) },
+                    enabled = s.atoms.isNotEmpty(),
+                    modifier = Modifier.height(36.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
+                ) { Text("应用", fontSize = 12.sp) }
+                // 预设值：点一下立即缩放（以前只改了待用倍数，没按「应用」就毫无反应）
+                listOf(0.5f, 0.8f, 1.2f, 1.5f, 2.0f).forEach { f ->
                     ToolChip(
-                        selected = abs(s.scaleFactor - f) < 0.01f,
+                        selected = false,
                         label = "${f}×",
-                        onClick = { s.scaleFactor = f; s.scaleValue = f.toString() }
+                        onClick = { s.scaleValue = f.toString(); applyScale(f) }
                     )
-                }
-                if (s.atoms.isNotEmpty() && abs(s.scaleFactor - 1f) > 0.01f) {
-                    Button(
-                        onClick = {
-                            s.pushUndo()
-                            val selected = if (s.selectedIds.isNotEmpty()) s.atoms.filter { it.id in s.selectedIds } else s.atoms.toList()
-                            val cx = selected.map { it.x }.average().toFloat()
-                            val cy = selected.map { it.y }.average().toFloat()
-                            for (a in s.atoms) {
-                                a.x = cx + (a.x - cx) * s.scaleFactor
-                                a.y = cy + (a.y - cy) * s.scaleFactor
-                            }
-                            s.scaleFactor = 1f; s.scaleValue = "1.0"
-                        },
-                        modifier = Modifier.height(36.dp),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
-                    ) { Text("应用", fontSize = 12.sp) }
                 }
             }
         }

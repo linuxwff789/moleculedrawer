@@ -176,43 +176,71 @@ private fun fillMolJs(mol: String): String {
     (function (mol) {
       var ta = document.getElementById('mol');
       if (ta) ta.value = mol;
-      function countAtoms(m) {
+
+      function frame() { return document.getElementById('ketcherFrame'); }
+
+      // 移动版把 Ketcher 放在标签页容器里，容器/iframe 没布局时画布是空的：
+      // 先把它显出来、给足尺寸，再触发 resize，Ketcher 才会重绘 SVG。
+      function revealAndResize() {
+        var f = frame();
         try {
-          var L = String(m).split('\n');
-          var c = L[3].trim().split(/\s+/);
-          return 'atoms=' + c[0] + ' bonds=' + c[1];
-        } catch (e) { return 'unparsed'; }
+          var tab = document.getElementById('b_Ketcher');
+          if (tab) { tab.style.display = 'block'; }
+          var wrap = tab && tab.parentElement;
+          if (wrap) { wrap.style.display = 'block'; }
+          if (f) {
+            f.style.visibility = 'visible';
+            f.style.display = 'block';
+            f.style.width = '100%';
+            f.style.height = '62vh';
+            f.style.minHeight = '420px';
+            f.contentWindow.dispatchEvent(new Event('resize'));
+          }
+        } catch (e) { console.log('[CB] reveal error ' + e); }
       }
+
+      function countAtoms(m) {
+        try { var c = String(m).split('\n')[3].trim().split(/\s+/); return 'atoms=' + c[0] + ' bonds=' + c[1]; }
+        catch (e) { return 'unparsed'; }
+      }
+
       function readback(k) {
         try {
           var out = k.getMolfile();
-          if (out && out.then) out.then(function (m) { console.log('[CB] readback ' + countAtoms(m)); })
-                                    .catch(function (e) { console.log('[CB] readback failed ' + e); });
-          else console.log('[CB] readback ' + countAtoms(out));
+          var inner = frame() && frame().contentWindow;
+          var svgNodes = 0;
+          try { svgNodes = inner.document.querySelectorAll('svg *').length; } catch (e) {}
+          if (out && out.then) out.then(function (m) { console.log('[CB] readback ' + countAtoms(m) + ' svg=' + svgNodes); });
+          else console.log('[CB] readback ' + countAtoms(out) + ' svg=' + svgNodes);
         } catch (e) { console.log('[CB] readback error ' + e); }
       }
+
       var tries = 0;
       var timer = setInterval(function () {
         tries++;
+        revealAndResize();
         var k = null;
-        try {
-          var f = document.getElementById('ketcherFrame');
-          k = f && f.contentWindow && f.contentWindow.ketcher;
-        } catch (e) { console.log('[CB] frame access error ' + e); }
+        try { var f = frame(); k = f && f.contentWindow && f.contentWindow.ketcher; } catch (e) {}
         if (!k) {
-          if (tries > 40) { clearInterval(timer); console.log('[CB] ketcher not found'); }
+          if (tries > 50) { clearInterval(timer); console.log('[CB] ketcher not found'); }
           return;
         }
         clearInterval(timer);
         console.log('[CB] ketcher api set=' + (typeof k.setMolecule) + ' get=' + (typeof k.getMolfile));
         try {
           var r = k.setMolecule(mol);
-          if (r && r.then) {
-            r.then(function () { console.log('[CB] setMolecule ok'); setTimeout(function () { readback(k); }, 800); })
-             .catch(function (e) { console.log('[CB] setMolecule rejected: ' + e); });
-          } else {
-            setTimeout(function () { readback(k); }, 800);
-          }
+          var after = function () {
+            setTimeout(function () {
+              try { if (k.layout) k.layout(); } catch (e) {}
+              try { if (k.zoomToFit) k.zoomToFit(); } catch (e) {}
+              try { if (k.editor && k.editor.zoomToFit) k.editor.zoomToFit(); } catch (e) {}
+              revealAndResize();
+              readback(k);
+            }, 700);
+          };
+          if (r && r.then) r.then(function () { console.log('[CB] setMolecule ok'); after(); })
+                             .catch(function (e) { console.log('[CB] setMolecule rejected: ' + e); });
+          else { after(); }
         } catch (e) { console.log('[CB] setMolecule threw: ' + e); }
       }, 400);
       return 'queued';

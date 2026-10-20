@@ -787,16 +787,27 @@ if (s.showSaveDialog) {
 
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     Canvas(Modifier.fillMaxSize().clipToBounds().onSizeChanged { s.canvasSizePx = it.toSize(); s.canvasSize.value = Offset(it.width.toFloat(), it.height.toFloat()) }
-                        .pointerInput(Unit) { detectTransformGestures { _, pan, zoom, _ ->
+                        // 手指计数：≥2 指时让拖拽手势让位（拖拽手势会 consume，吃掉缩放）
+                        .pointerInput(Unit) {
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    val pressed = e.changes.count { it.pressed }
+                                    val multi = pressed > 1
+                                    if (s.multiTouch != multi) s.multiTouch = multi
+                                }
+                            }
+                        }
+                        .pointerInput(Unit) { detectTransformGestures { centroid, pan, zoom, _ ->
                             if (zoom != 1f && s.atoms.isNotEmpty()) { if (!s.isPinchZooming) { s.pushUndo(); s.isPinchZooming = true }
                                 val hasSelection = s.selectedIds.isNotEmpty()
                                 val sel = if (hasSelection) s.atoms.filter { it.id in s.selectedIds } else s.atoms.toList()
                                 val selAnn = if (hasSelection) s.annotations.filter { -it.id in s.selectedIds } else s.annotations.toList()
                                 if (sel.isEmpty() && selAnn.isEmpty()) return@detectTransformGestures
                                 val sf = zoom.coerceIn(0.5f, 2f)
-                                // 缩放中心（所有原子平均）
-                                val zcx = if (sel.isNotEmpty()) sel.map { it.x }.average().toFloat() else s.canvasSizePx.width / 2f
-                                val zcy = if (sel.isNotEmpty()) sel.map { it.y }.average().toFloat() else s.canvasSizePx.height / 2f
+                                // 缩放中心：用双指中点（世界坐标），内容才会稳稳地跟着手指缩放
+                                val zcx = centroid.x - s.canvasOffsetX
+                                val zcy = centroid.y - s.canvasOffsetY
                                 // 缩放原子
                                 if (sel.isNotEmpty()) {
                                     val targetIds = if (hasSelection) s.selectedIds.filter { it > 0 } else s.atoms.indices.map { s.atoms[it].id }.toSet()
@@ -888,7 +899,7 @@ if (s.showSaveDialog) {
                                     else -> {}
                                 } }
                             }
-                        .pointerInput(s.tool, s.selBond, s.ringType, s.isFuncGroupDragMode, s.selectedFuncGroup) { detectDragGestures(
+                        .pointerInput(s.tool, s.selBond, s.ringType, s.isFuncGroupDragMode, s.selectedFuncGroup, s.multiTouch) { detectDragGestures(
                             onDragStart = { pos -> when (s.tool) {
                                 DrawTool.ATOM -> { s.pushUndo(); val wp = Offset(pos.x - s.canvasOffsetX, pos.y - s.canvasOffsetY); val hit = hitAtom(s.atoms, wp) ?: findMergeAtom(s.atoms, wp); s.dragSrc = hit?.id; s.isDragging = true; s.dragEnd = wp }
                                 DrawTool.BOND -> { 

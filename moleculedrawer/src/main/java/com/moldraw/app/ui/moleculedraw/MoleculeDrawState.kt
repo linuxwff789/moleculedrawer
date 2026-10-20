@@ -272,6 +272,8 @@ class MoleculeDrawState {
 
     // ── 双指缩放 ──
     var isPinchZooming by mutableStateOf(false)
+    /** 当前是否有两根以上手指按在画布上（用来让拖拽手势让位给缩放） */
+    var multiTouch by mutableStateOf(false)
 
     // ── 导入导出 ──
     var showMolecularWeight by mutableStateOf(false) // 在分子下方显示分子式/分子量

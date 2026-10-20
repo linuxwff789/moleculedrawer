@@ -181,9 +181,22 @@ private fun fillMolJs(mol: String): String {
 
       // 移动版把 Ketcher 放在标签页容器里，容器/iframe 没布局时画布是空的：
       // 先把它显出来、给足尺寸，再触发 resize，Ketcher 才会重绘 SVG。
+      function focusMode() {
+        // 折叠站点头部/面包屑/标题行，把竖向空间全留给编辑器
+        try {
+          if (!document.getElementById('cb-focus-style')) {
+            var st = document.createElement('style');
+            st.id = 'cb-focus-style';
+            st.textContent = '.Maps,.structure,#foot,header,.head,.nav,.header{display:none!important}';
+            (document.head || document.documentElement).appendChild(st);
+          }
+        } catch (e) {}
+      }
+
       function revealAndResize() {
         var f = frame();
         try {
+          focusMode();
           var tab = document.getElementById('b_Ketcher');
           if (tab) { tab.style.display = 'block'; }
           var wrap = tab && tab.parentElement;
@@ -262,13 +275,14 @@ private fun fillMolJs(mol: String): String {
         var k = null;
         try { var f = frame(); k = f && f.contentWindow && f.contentWindow.ketcher; } catch (e) {}
         if (!k) {
-          if (tries > 50) { clearInterval(timer); console.log('[CB] ketcher not found'); }
+          if (tries > 50) { clearInterval(timer); window.__cbFill = 'noframe'; console.log('[CB] ketcher not found'); }
           return;
         }
         clearInterval(timer);
         console.log('[CB] ketcher api set=' + (typeof k.setMolecule) + ' get=' + (typeof k.getMolfile) +
                     ' layout=' + (typeof k.layout) + ' zoomFit=' + (typeof k.zoomToFit));
         try {
+          window.__cbFill = 'pending';
           var r = k.setMolecule(mol);
           var after = function () {
             setTimeout(function () {
@@ -279,8 +293,8 @@ private fun fillMolJs(mol: String): String {
               readback(k);
             }, 700);
           };
-          if (r && r.then) r.then(function () { console.log('[CB] setMolecule ok'); after(); })
-                             .catch(function (e) { console.log('[CB] setMolecule rejected: ' + e); });
+          if (r && r.then) r.then(function () { window.__cbFill = 'ok'; console.log('[CB] setMolecule ok'); after(); })
+                             .catch(function (e) { window.__cbFill = 'reject'; console.log('[CB] setMolecule rejected: ' + e); });
           else { after(); }
         } catch (e) { console.log('[CB] setMolecule threw: ' + e); }
       }, 400);
@@ -563,6 +577,17 @@ fun ChemicalBookSheet(
                                             view.evaluateJavascript(fillMolJs(pasteMol)) { r ->
                                                 android.util.Log.d("MOLDRAW_DEBUG", "[CB] fillMol r=$r")
                                             }
+                                            view.postDelayed({
+                                                view.evaluateJavascript("window.__cbFill || 'none'") { r ->
+                                                    android.util.Log.d("MOLDRAW_DEBUG", "[CB] fill state=$r")
+                                                    status = when {
+                                                        r.contains("ok") -> "结构已填入编辑器，选好类型后点「立即搜索」"
+                                                        r.contains("reject") -> "编辑器拒绝了这份 molfile（价态/芳香键问题）"
+                                                        r.contains("noframe") -> "编辑器没加载出来，返回再进一次试试"
+                                                        else -> "已提交，等编辑器响应…"
+                                                    }
+                                                }
+                                            }, 5000)
                                             sniffed = null
                                         }
                                         if (pendingQuery.isNotBlank() && view != null) {
